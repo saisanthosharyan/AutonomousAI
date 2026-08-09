@@ -7,4 +7,5 @@ async def main():
         await ws.send("hello")
         await asyncio.sleep(5)
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

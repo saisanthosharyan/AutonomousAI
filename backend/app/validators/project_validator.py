@@ -117,13 +117,15 @@ class ProjectValidator:
                 item
                 for item in project.iterdir()
                 if item.is_dir()
-                and item.name not in {
-                    "__pycache__",
-                    ".git",
-                    ".venv",
-                    "venv",
-                    "node_modules",
-                }
+                if (
+                    item.is_dir()
+                    and not item.name.startswith(".")
+                    and item.name not in {
+                        "__pycache__",
+                        "venv",
+                        "node_modules",
+                    }
+                )
             ]
 
         except OSError as e:
@@ -176,7 +178,10 @@ class ProjectValidator:
 
         return project
 
-    def validate(self, project_path: str):
+    def validate(
+        self,
+        project_path: str,
+    ) -> dict:
         """
         Validate a generated project.
 
@@ -250,6 +255,20 @@ class ProjectValidator:
             project_root = self._detect_project_root(
                 project
             )
+            if not any(project_root.iterdir()):
+
+                logger.error(
+                    "Project directory is empty."
+                )
+
+                return {
+                    "valid": False,
+                    "score": 0,
+                    "missing_files": [],
+                    "warnings": [
+                        "Project directory is empty."
+                    ],
+                }
 
             logger.info(
                 f"Using validation root: {project_root}"
@@ -341,6 +360,7 @@ class ProjectValidator:
                     file
                     for file in project_root.rglob("*")
                     if file.is_file()
+                    and "__pycache__" not in file.parts
                 ]
 
                 logger.info(
@@ -382,6 +402,15 @@ class ProjectValidator:
                 f"Validation completed. "
                 f"Score: {report['score']}"
             )
+            logger.info(
+                f"Missing files: "
+                f"{len(report['missing_files'])}"
+            )
+
+            logger.info(
+                f"Warnings: "
+                f"{len(report['warnings'])}"
+)
 
             logger.info(
                 f"Validation status: "
@@ -390,7 +419,7 @@ class ProjectValidator:
 
             return report
 
-        except Exception as e:
+        except Exception as exc:
 
             logger.exception(
                 "Project validation failed."
@@ -401,7 +430,7 @@ class ProjectValidator:
                 "score": 0,
                 "missing_files": [],
                 "warnings": [
-                    str(e)
+                    str(exc)
                 ],
             }
 

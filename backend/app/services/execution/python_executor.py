@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 import time
@@ -10,17 +11,30 @@ from app.core.logger import logger
 
 class PythonExecutor:
     """
-    Executes generated Python projects safely with timeouts.
+    Executes generated Python projects with controlled smoke tests.
 
     Execution strategy:
 
     1. Validate project.
-    2. Install declared dependencies only.
-    3. Run pytest only when tests exist.
-    4. Otherwise locate an entry point.
-    5. Compile Python files first.
-    6. Execute the entry point.
-    7. Return structured execution information.
+    2. Install declared dependencies.
+    3. Run pytest when tests exist.
+    4. Locate a runnable entry point.
+    5. Compile all Python files.
+    6. Detect the application's execution style.
+    7. Run a safe smoke test.
+    8. Return structured execution information.
+
+    Important:
+    Generated projects may be:
+        - CLI applications
+        - argparse applications
+        - simple scripts
+        - web applications
+        - GUI applications
+        - interactive applications
+
+    The executor must not blindly execute every application
+    with zero arguments.
     """
 
     EXECUTION_TIMEOUT = 30
@@ -31,6 +45,7 @@ class PythonExecutor:
         "app.py",
         "run.py",
         "cli.py",
+        "server.py",
         "manage.py",
     )
 
@@ -42,6 +57,11 @@ class PythonExecutor:
         ".git",
         "node_modules",
         "tests",
+        "dist",
+        "build",
+        ".mypy_cache",
+        ".idea",
+        ".vscode",
     }
 
     IGNORED_FILES = {
@@ -50,16 +70,23 @@ class PythonExecutor:
         "conftest.py",
     }
 
+    _MAIN_GUARD_MARKERS = (
+        '__name__ == "__main__"',
+        "__name__ == '__main__'",
+    )
+
+    # ==========================================================
+    # MAIN
+    # ==========================================================
+
     def run(
         self,
         project_path: str,
     ) -> dict:
 
-        start_time = time.time()
+        start_time = time.perf_counter()
 
-        project = Path(
-            project_path
-        ).resolve()
+        project = Path(project_path).resolve()
 
         if not project.exists():
             return self._error(
@@ -81,10 +108,8 @@ class PythonExecutor:
             # Dependencies
             # --------------------------------------------------
 
-            dependency_result = (
-                self._install_dependencies(
-                    project
-                )
+            dependency_result = self._install_dependencies(
+                project
             )
 
             if not dependency_result["success"]:
@@ -118,11 +143,10 @@ class PythonExecutor:
             # Entry point
             # --------------------------------------------------
 
-            entry = self.find_entry(
-                project
-            )
+            entry = self.find_entry(project)
 
             if entry is None:
+
                 return self._finish(
                     self._error(
                         "No runnable Python entry file found."
@@ -139,33 +163,59 @@ class PythonExecutor:
             # Syntax validation
             # --------------------------------------------------
 
-            syntax_result = (
-                self._compile_project(
-                    project
-                )
+            syntax_result = self._compile_project(
+                project
             )
 
             if not syntax_result["success"]:
+
                 return self._finish(
                     syntax_result,
                     start_time,
                 )
 
             # --------------------------------------------------
-            # Detect interactive application
+            # Read source
             # --------------------------------------------------
 
-            content = entry.read_text(
-                encoding="utf-8",
-                errors="ignore",
+            try:
+
+                content = entry.read_text(
+                    encoding="utf-8",
+                    errors="ignore",
+                )
+
+            except Exception as exc:
+
+                return self._finish(
+                    self._error(
+                        f"Unable to read entry point: {exc}"
+                    ),
+                    start_time,
+                )
+
+            # --------------------------------------------------
+            # Detect application type
+            # --------------------------------------------------
+
+            execution_mode = self._detect_execution_mode(
+                content
             )
 
-            if self._is_interactive(
-                content
-            ):
+            logger.info(
+                f"Detected Python execution mode: "
+                f"{execution_mode}"
+            )
+
+            # --------------------------------------------------
+            # Interactive applications
+            # --------------------------------------------------
+
+            if execution_mode == "interactive":
 
                 logger.warning(
-                    "Interactive application detected."
+                    "Interactive application detected; "
+                    "execution skipped."
                 )
 
                 return self._finish(
@@ -173,8 +223,8 @@ class PythonExecutor:
                         "success": True,
                         "stdout": "",
                         "stderr": (
-                            "Interactive application "
-                            "detected; execution skipped."
+                            "Interactive application detected; "
+                            "execution skipped."
                         ),
                         "return_code": 0,
                     },
@@ -182,30 +232,56 @@ class PythonExecutor:
                 )
 
             # --------------------------------------------------
-            # Determine command
+            # GUI / web applications
             # --------------------------------------------------
 
-            command = [
-                sys.executable,
-                str(entry),
-            ]
+            if execution_mode in {
+                "web",
+                "gui",
+            }:
 
-            # If argparse is used, --help is a safe smoke test.
-            if (
-                "argparse" in content
-                and "ArgumentParser" in content
-            ):
-                command.append("--help")
+                logger.warning(
+                    f"{execution_mode.capitalize()} application "
+                    "detected; startup execution skipped."
+                )
+
+                return self._finish(
+                    {
+                        "success": True,
+                        "stdout": "",
+                        "stderr": (
+                            f"{execution_mode.capitalize()} application "
+                            "detected; startup execution skipped."
+                        ),
+                        "return_code": 0,
+                    },
+                    start_time,
+                )
+
+            # --------------------------------------------------
+            # Determine smoke-test command
+            # --------------------------------------------------
+
+            command = self._build_execution_command(
+                entry,
+                content,
+            )
 
             logger.info(
-                "Executing Python project..."
+                f"Execution command: {' '.join(command)}"
             )
+
+            # --------------------------------------------------
+            # Execute
+            # --------------------------------------------------
 
             process = subprocess.run(
                 command,
                 cwd=project,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=self.EXECUTION_TIMEOUT,
                 stdin=subprocess.DEVNULL,
             )
@@ -229,10 +305,8 @@ class PythonExecutor:
             return self._finish(
                 {
                     "success": False,
-                    "stdout": (
-                        self._timeout_output(
-                            exc.stdout
-                        )
+                    "stdout": self._timeout_output(
+                        exc.stdout
                     ),
                     "stderr": (
                         f"Execution timed out after "
@@ -250,14 +324,12 @@ class PythonExecutor:
             )
 
             return self._finish(
-                self._error(
-                    str(exc)
-                ),
+                self._error(str(exc)),
                 start_time,
             )
 
     # ==========================================================
-    # INSTALL DEPENDENCIES
+    # DEPENDENCIES
     # ==========================================================
 
     def _install_dependencies(
@@ -265,18 +337,33 @@ class PythonExecutor:
         project: Path,
     ) -> dict:
 
-        requirements = (
-            project / "requirements.txt"
-        )
+        requirements = project / "requirements.txt"
 
         if not requirements.exists():
+            logger.info(
+                "No requirements.txt found; "
+                "dependency installation skipped."
+            )
+
             return {
-                "success": True
+                "success": True,
+                "stdout": "",
+                "stderr": "",
+                "return_code": 0,
             }
 
         if requirements.stat().st_size == 0:
+
+            logger.info(
+                "requirements.txt is empty; "
+                "dependency installation skipped."
+            )
+
             return {
-                "success": True
+                "success": True,
+                "stdout": "",
+                "stderr": "",
+                "return_code": 0,
             }
 
         logger.info(
@@ -291,12 +378,15 @@ class PythonExecutor:
                     "-m",
                     "pip",
                     "install",
+                    "--disable-pip-version-check",
                     "-r",
-                    "requirements.txt",
+                    str(requirements),
                 ],
                 cwd=project,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=self.INSTALL_TIMEOUT,
             )
 
@@ -331,6 +421,15 @@ class PythonExecutor:
                 "return_code": -1,
             }
 
+        except Exception as exc:
+
+            return {
+                "success": False,
+                "stdout": "",
+                "stderr": str(exc),
+                "return_code": -1,
+            }
+
     # ==========================================================
     # PYTEST
     # ==========================================================
@@ -356,11 +455,13 @@ class PythonExecutor:
                 cwd=project,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=self.EXECUTION_TIMEOUT,
                 stdin=subprocess.DEVNULL,
             )
 
-            # pytest return code 5 means no tests collected.
+            # pytest return code 5 = no tests collected.
             if process.returncode == 5:
 
                 return {
@@ -392,6 +493,15 @@ class PythonExecutor:
                 "return_code": -1,
             }
 
+        except Exception as exc:
+
+            return {
+                "success": False,
+                "stdout": "",
+                "stderr": str(exc),
+                "return_code": -1,
+            }
+
     # ==========================================================
     # COMPILE
     # ==========================================================
@@ -419,6 +529,7 @@ class PythonExecutor:
         ]
 
         if not python_files:
+
             return self._error(
                 "No Python source files found."
             )
@@ -437,6 +548,8 @@ class PythonExecutor:
                     cwd=project,
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     timeout=10,
                 )
 
@@ -460,27 +573,36 @@ class PythonExecutor:
 
         return {
             "success": True,
-            "stdout": "Python syntax validation passed.",
+            "stdout": (
+                "Python syntax validation passed."
+            ),
             "stderr": "",
             "return_code": 0,
         }
 
     # ==========================================================
-    # FIND ENTRY
+    # ENTRY POINT
     # ==========================================================
 
     def find_entry(
         self,
         project: Path,
     ) -> Path | None:
+        """
+        Locate the best runnable Python entry point.
+
+        Priority:
+        1. Well-known entry filenames.
+        2. Files containing __main__ guard.
+        3. Shallowest Python source file.
+        """
 
         for filename in self.ENTRY_FILES:
 
-            candidate = (
-                project / filename
-            )
+            candidate = project / filename
 
             if candidate.exists():
+
                 return candidate
 
         candidates = []
@@ -501,36 +623,351 @@ class PythonExecutor:
         if not candidates:
             return None
 
-        # Prefer shallow files.
         candidates.sort(
             key=lambda p: (
-                len(p.relative_to(project).parts),
+                len(
+                    p.relative_to(project).parts
+                ),
                 str(p).lower(),
             )
         )
 
+        guarded = [
+            file
+            for file in candidates
+            if self._has_main_guard(file)
+        ]
+
+        if guarded:
+            return guarded[0]
+
         return candidates[0]
 
+    def _has_main_guard(
+        self,
+        file: Path,
+    ) -> bool:
+
+        try:
+
+            text = file.read_text(
+                encoding="utf-8",
+                errors="ignore",
+            )
+
+        except Exception:
+
+            return False
+
+        return any(
+            marker in text
+            for marker in self._MAIN_GUARD_MARKERS
+        )
+
     # ==========================================================
-    # INTERACTIVE DETECTION
+    # EXECUTION MODE DETECTION
     # ==========================================================
 
-    def _is_interactive(
+    def _detect_execution_mode(
+        self,
+        content: str,
+    ) -> str:
+        """
+        Detect how the generated Python program expects to run.
+
+        Returns:
+            cli
+            interactive
+            web
+            gui
+        """
+
+        lowered = content.lower()
+
+        # GUI frameworks
+        if any(
+            marker in lowered
+            for marker in (
+                "import tkinter",
+                "from tkinter",
+                "import pygame",
+                "from pygame",
+                "import pyqt",
+                "from pyqt",
+                "from PyQt".lower(),
+            )
+        ):
+
+            return "gui"
+
+        # Web frameworks
+        if any(
+            marker in lowered
+            for marker in (
+                "from fastapi",
+                "import fastapi",
+                "from flask",
+                "import flask",
+                "from django",
+                "import django",
+                "import streamlit",
+                "from streamlit",
+                "import gradio",
+                "from gradio",
+            )
+        ):
+
+            return "web"
+
+        # Explicit interactive input.
+        #
+        # IMPORTANT:
+        # We do NOT classify every program containing
+        # "input(" as automatically successful anymore.
+        # We distinguish CLI programs from truly interactive
+        # programs.
+        if self._contains_input_call(content):
+
+            if self._contains_cli_arguments(content):
+
+                return "cli"
+
+            return "interactive"
+
+        return "cli"
+
+    # ==========================================================
+    # CLI DETECTION
+    # ==========================================================
+
+    def _contains_cli_arguments(
         self,
         content: str,
     ) -> bool:
 
         patterns = (
-            "input(",
-            "cmdloop(",
-            "start_repl(",
-            "while True:",
+            "sys.argv",
+            "argparse",
+            "ArgumentParser",
+            "click.command",
+            "click.option",
+            "typer.",
         )
 
         return any(
             pattern in content
             for pattern in patterns
         )
+
+    def _contains_input_call(
+        self,
+        content: str,
+    ) -> bool:
+
+        return bool(
+            re.search(
+                r"\binput\s*\(",
+                content,
+            )
+        )
+
+    # ==========================================================
+    # BUILD EXECUTION COMMAND
+    # ==========================================================
+
+    def _build_execution_command(
+        self,
+        entry: Path,
+        content: str,
+    ) -> list[str]:
+        """
+        Build a safe smoke-test command.
+
+        argparse:
+            python app.py --help
+
+        sys.argv:
+            python app.py --help
+
+        normal script:
+            python app.py
+
+        Simple CLI calculator using sys.argv:
+            python app.py add 2 3
+        """
+
+        command = [
+            sys.executable,
+            str(entry),
+        ]
+
+        lowered = content.lower()
+
+        # ------------------------------------------------------
+        # argparse
+        # ------------------------------------------------------
+
+        if (
+            "argparse" in lowered
+            and "argumentparser" in lowered
+        ):
+
+            command.append("--help")
+
+            return command
+
+        # ------------------------------------------------------
+        # Click / Typer
+        # ------------------------------------------------------
+
+        if (
+            "click.command" in lowered
+            or "typer." in lowered
+        ):
+
+            command.append("--help")
+
+            return command
+
+        # ------------------------------------------------------
+        # sys.argv based CLI
+        # ------------------------------------------------------
+
+        if "sys.argv" in lowered:
+
+            smoke_args = self._infer_sys_argv_arguments(
+                content
+            )
+
+            command.extend(smoke_args)
+
+            return command
+
+        # ------------------------------------------------------
+        # Interactive input without command arguments
+        # ------------------------------------------------------
+
+        if self._contains_input_call(content):
+
+            # We cannot safely predict arbitrary input.
+            #
+            # Returning --help is not guaranteed to work,
+            # therefore we deliberately skip execution earlier
+            # for these applications.
+            return command
+
+        return command
+
+    # ==========================================================
+    # INFER SYS.ARGV ARGUMENTS
+    # ==========================================================
+
+    def _infer_sys_argv_arguments(
+        self,
+        content: str,
+    ) -> list[str]:
+        """
+        Infer safe smoke-test arguments for common generated
+        command-line applications.
+
+        This is intentionally conservative.
+
+        Example:
+
+            operation = sys.argv[1]
+            num1 = float(sys.argv[2])
+            num2 = float(sys.argv[3])
+
+        becomes:
+
+            add 2 3
+        """
+
+        lowered = content.lower()
+
+        # ------------------------------------------------------
+        # Common calculator pattern
+        # ------------------------------------------------------
+
+        calculator_operations = (
+            "add",
+            "subtract",
+            "multiply",
+            "divide",
+        )
+
+        if all(
+            operation in lowered
+            for operation in calculator_operations
+        ):
+
+            return [
+                "add",
+                "2",
+                "3",
+            ]
+
+        # ------------------------------------------------------
+        # Common operation choices
+        # ------------------------------------------------------
+
+        if (
+            "operation" in lowered
+            and "sys.argv[1]" in lowered
+        ):
+
+            return [
+                "add",
+                "2",
+                "3",
+            ]
+
+        # ------------------------------------------------------
+        # Generic numeric CLI
+        # ------------------------------------------------------
+
+        argv_indexes = re.findall(
+            r"sys\.argv\[(\d+)\]",
+            content,
+        )
+
+        indexes = sorted(
+            {
+                int(index)
+                for index in argv_indexes
+            }
+        )
+
+        if indexes:
+
+            highest_index = max(indexes)
+
+            if highest_index >= 3:
+
+                return [
+                    "add",
+                    "2",
+                    "3",
+                ]
+
+            if highest_index == 2:
+
+                return [
+                    "2",
+                    "3",
+                ]
+
+            if highest_index == 1:
+
+                return [
+                    "2",
+                ]
+
+        # ------------------------------------------------------
+        # Unknown CLI
+        # ------------------------------------------------------
+
+        return []
 
     # ==========================================================
     # IGNORED FILE
@@ -582,7 +1019,7 @@ class PythonExecutor:
         )
 
         result["execution_time"] = round(
-            time.time() - start_time,
+            time.perf_counter() - start_time,
             2,
         )
 
@@ -621,6 +1058,7 @@ class PythonExecutor:
             output,
             bytes,
         ):
+
             return output.decode(
                 errors="replace"
             )

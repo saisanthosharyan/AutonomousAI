@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import re
 import shutil
 from datetime import datetime
@@ -31,18 +33,11 @@ class ProjectBuilder:
 
     def __init__(self):
 
-        # backend/app/services/project_builder.py
-        #
-        # parents[0] = services
-        # parents[1] = app
-        # parents[2] = backend
-        # parents[3] = AutoDev-AI
+        from app.core.config import settings
 
-        root_dir = Path(__file__).resolve().parents[3]
-
-        self.output_dir = (
-            root_dir / "generated_projects"
-        )
+        self.output_dir = Path(
+            settings.GENERATED_PROJECTS_DIR
+        ).resolve()
 
         self.output_dir.mkdir(
             parents=True,
@@ -146,7 +141,6 @@ class ProjectBuilder:
                 created_files
             ),
         }
-
     # ==========================================================
     # REBUILD / REPAIR EXISTING PROJECT
     # ==========================================================
@@ -205,14 +199,10 @@ class ProjectBuilder:
         )
 
         return {
-            "project_path": str(
-                project
-            ),
+            "project_path": str(project),
             "zip_path": zip_path,
             "files": updated_files,
-            "file_count": len(
-                updated_files
-            ),
+            "file_count": len(updated_files),
         }
 
     # ==========================================================
@@ -243,6 +233,11 @@ class ProjectBuilder:
             llm_output
         )
 
+        print("=" * 80)
+        print("RAW AFTER CLEANING")
+        print(repr(llm_output[:700]))
+        print("=" * 80)
+
         if not llm_output:
 
             raise ValueError(
@@ -251,19 +246,34 @@ class ProjectBuilder:
 
         # ------------------------------------------------------
         # Parse FILE sections
+        #
+        # NOTE: the previous pattern used a non-anchored
+        # `(?=FILE:)` lookahead, which could match "FILE:" text
+        # appearing mid-line (e.g. inside a comment or string in
+        # generated code), and didn't require "FILE:" markers to
+        # start on their own line. That caused sections to merge
+        # or fail to split, which is why ProjectBuilder sometimes
+        # reported "No FILE: sections found" even when the LLM
+        # output looked correct at a glance.
+        #
+        # This version anchors "FILE:" to the start of a line
+        # with `(?m)^FILE:` and requires the next section to also
+        # start at a line boundary, which is far more robust to
+        # blank lines and incidental "FILE:" substrings in file
+        # content.
         # ------------------------------------------------------
 
-        pattern = (
-            r"^\s*FILE\s*:\s*(.*?)\s*$"
-            r"([\s\S]*?)"
-            r"(?=^\s*FILE\s*:|\Z)"
+        pattern = re.compile(
+            r"^FILE:\s*(.*?)\n([\s\S]*?)(?=^FILE:|\Z)",
+            re.MULTILINE,
         )
 
-        matches = re.findall(
-            pattern,
-            llm_output,
-            flags=re.MULTILINE | re.IGNORECASE,
-        )
+        matches = list(pattern.finditer(llm_output))
+
+        print("MATCHES FOUND:", len(matches))
+
+        for match in matches:
+            print("FILE:", match.group(1))
 
         if not matches:
 
@@ -280,9 +290,7 @@ class ProjectBuilder:
         # Project root
         # ------------------------------------------------------
 
-        project_root = (
-            project_path.resolve()
-        )
+        project_root = project_path.resolve()
 
         project_root.mkdir(
             parents=True,
@@ -308,6 +316,10 @@ class ProjectBuilder:
             "node_modules",
             ".venv",
             "venv",
+            "dist",
+            "build",
+            ".env",
+            ".env.local",
         }
 
         created: list[str] = []
@@ -318,11 +330,10 @@ class ProjectBuilder:
         # Process every FILE section
         # ------------------------------------------------------
 
-        for raw_file_path, content in matches:
+        for match in matches:
 
-            # --------------------------------------------------
-            # Normalize path
-            # --------------------------------------------------
+            raw_file_path = match.group(1)
+            content = match.group(2)
 
             file_path = (
                 raw_file_path
@@ -356,8 +367,7 @@ class ProjectBuilder:
             if file_path.startswith("/"):
 
                 raise ValueError(
-                    f"Unsafe absolute file path detected: "
-                    f"{file_path}"
+                    f"Unsafe absolute file path detected: {file_path}"
                 )
 
             if re.match(
@@ -366,8 +376,7 @@ class ProjectBuilder:
             ):
 
                 raise ValueError(
-                    f"Unsafe Windows absolute path detected: "
-                    f"{file_path}"
+                    f"Unsafe Windows absolute path detected: {file_path}"
                 )
 
             path_parts = Path(
@@ -384,10 +393,8 @@ class ProjectBuilder:
             ):
 
                 raise ValueError(
-                    f"Unsafe file path detected: "
-                    f"{file_path}"
+                    f"Unsafe file path detected: {file_path}"
                 )
-
             # --------------------------------------------------
             # Ignore system directories
             # --------------------------------------------------
@@ -490,11 +497,14 @@ class ProjectBuilder:
 
             try:
 
-                destination.write_text(
+                temp = destination.with_suffix(destination.suffix + ".tmp")
+
+                temp.write_text(
                     content,
                     encoding="utf-8",
-                    newline="\n",
                 )
+
+                temp.replace(destination)
 
             except Exception as e:
 
@@ -552,23 +562,8 @@ class ProjectBuilder:
         file_path: str,
         content: str,
     ) -> str:
-        """
-        Remove accidental language labels generated by LLMs.
-
-        Example:
-
-            FILE: app.py
-            python
-            import argparse
-
-        Becomes:
-
-            FILE: app.py
-            import argparse
-        """
 
         if not content:
-
             return ""
 
         content = content.strip("\n")
@@ -578,62 +573,21 @@ class ProjectBuilder:
         ).suffix.lower()
 
         language_markers = {
-            ".py": {
-                "python",
-                "py",
-            },
-            ".js": {
-                "javascript",
-                "js",
-            },
-            ".jsx": {
-                "javascript",
-                "jsx",
-            },
-            ".ts": {
-                "typescript",
-                "ts",
-            },
-            ".tsx": {
-                "typescript",
-                "tsx",
-            },
-            ".java": {
-                "java",
-            },
-            ".cpp": {
-                "cpp",
-                "c++",
-            },
-            ".cc": {
-                "cpp",
-                "c++",
-            },
-            ".cxx": {
-                "cpp",
-                "c++",
-            },
-            ".html": {
-                "html",
-            },
-            ".css": {
-                "css",
-            },
-            ".json": {
-                "json",
-            },
-            ".yaml": {
-                "yaml",
-                "yml",
-            },
-            ".yml": {
-                "yaml",
-                "yml",
-            },
-            ".md": {
-                "markdown",
-                "md",
-            },
+            ".py": {"python", "py"},
+            ".js": {"javascript", "js"},
+            ".jsx": {"javascript", "jsx"},
+            ".ts": {"typescript", "ts"},
+            ".tsx": {"typescript", "tsx"},
+            ".java": {"java"},
+            ".cpp": {"cpp", "c++"},
+            ".cc": {"cpp", "c++"},
+            ".cxx": {"cpp", "c++"},
+            ".html": {"html"},
+            ".css": {"css"},
+            ".json": {"json"},
+            ".yaml": {"yaml", "yml"},
+            ".yml": {"yaml", "yml"},
+            ".md": {"markdown", "md"},
         }
 
         markers = language_markers.get(
@@ -668,9 +622,6 @@ class ProjectBuilder:
         self,
         project_path: Path,
     ) -> str:
-        """
-        Create a ZIP archive beside the project directory.
-        """
 
         project_path = Path(
             project_path
@@ -690,14 +641,11 @@ class ProjectBuilder:
                 f"{project_path}"
             )
 
-        zip_file = project_path.with_suffix(
-            ".zip"
-        )
+        zip_file = project_path.with_suffix(".zip")
 
         if zip_file.exists():
 
             try:
-
                 zip_file.unlink()
 
             except Exception as e:
@@ -708,13 +656,9 @@ class ProjectBuilder:
                 ) from e
 
         archive = shutil.make_archive(
-            base_name=str(
-                project_path
-            ),
+            base_name=str(project_path),
             format="zip",
-            root_dir=str(
-                project_path
-            ),
+            root_dir=str(project_path),
         )
 
         logger.info(
@@ -731,11 +675,6 @@ class ProjectBuilder:
         self,
         project_path: Path,
     ) -> None:
-        """
-        Completely remove all files from a project.
-
-        This method is intentionally not used by rebuild().
-        """
 
         if not project_path.exists():
             return
@@ -752,13 +691,8 @@ class ProjectBuilder:
             try:
 
                 if item.is_dir():
-
-                    shutil.rmtree(
-                        item
-                    )
-
+                    shutil.rmtree(item)
                 else:
-
                     item.unlink()
 
             except Exception:
@@ -777,17 +711,12 @@ class ProjectBuilder:
         self,
         text: str,
     ) -> str:
-        """
-        Clean common formatting mistakes produced by LLMs.
-        """
 
         if not text:
-
             return ""
 
         text = text.strip()
 
-        # Remove opening markdown fence.
         text = re.sub(
             r"^\s*```(?:text|plaintext|"
             r"python|javascript|typescript|"
@@ -800,14 +729,12 @@ class ProjectBuilder:
             flags=re.IGNORECASE,
         )
 
-        # Remove closing markdown fence.
         text = re.sub(
             r"\s*```\s*$",
             "",
             text,
         )
 
-        # Remove remaining fences.
         text = text.replace(
             "```",
             "",
@@ -823,20 +750,8 @@ class ProjectBuilder:
         self,
         name: str,
     ) -> str:
-        """
-        Convert project name into a safe directory name.
-
-        Example:
-
-            My React App!
-
-        becomes:
-
-            my_react_app
-        """
 
         if not name:
-
             return "generated_project"
 
         safe = re.sub(
@@ -851,12 +766,9 @@ class ProjectBuilder:
             safe,
         )
 
-        safe = safe.strip(
-            "_"
-        )
+        safe = safe.strip("_")
 
         if not safe:
-
             return "generated_project"
 
         return safe.lower()

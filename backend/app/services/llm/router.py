@@ -21,6 +21,8 @@ class LLMRouter:
         "openai": OpenAIService,
     }
 
+    DEFAULT_PROVIDER_ORDER = ["gemini", "openai", "ollama"]
+
     @classmethod
     def _providers(cls) -> list[str]:
 
@@ -42,7 +44,8 @@ class LLMRouter:
             if name not in cls.PROVIDERS:
 
                 logger.warning(
-                    f"Ignoring unsupported LLM provider: {name}"
+                    "Ignoring unsupported LLM provider: '%s'",
+                    name,
                 )
 
                 continue
@@ -52,7 +55,11 @@ class LLMRouter:
 
         if not providers:
 
-            providers = ["ollama"]
+            logger.warning(
+                "LLM_PRIORITY not configured. Using default provider order."
+            )
+
+            providers = list(cls.DEFAULT_PROVIDER_ORDER)
 
         return providers
 
@@ -81,7 +88,8 @@ class LLMRouter:
             )
 
         logger.info(
-            f"Initializing LLM provider: {provider}"
+            "Initializing LLM provider '%s'...",
+            provider,
         )
 
         instance = provider_class()
@@ -91,7 +99,8 @@ class LLMRouter:
         ] = instance
 
         logger.info(
-            f"LLM provider initialized: {provider}"
+            "LLM provider '%s' initialized successfully.",
+            provider,
         )
 
         return instance
@@ -125,11 +134,11 @@ class LLMRouter:
                     )
                 )
 
-            except Exception as exc:
+            except Exception:
 
-                logger.warning(
-                    f"Provider '{name}' unavailable: "
-                    f"{exc}"
+                logger.exception(
+                    "Failed to initialize LLM provider '%s'.",
+                    name,
                 )
 
         if not providers:
@@ -140,7 +149,17 @@ class LLMRouter:
 
         if len(providers) == 1:
 
+            logger.info(
+                "Using single LLM provider: %s",
+                providers[0][0],
+            )
+
             return providers[0][1]
+
+        logger.info(
+            "Using FallbackLLMService with providers: %s",
+            ", ".join(name for name, _ in providers),
+        )
 
         return FallbackLLMService(
             providers

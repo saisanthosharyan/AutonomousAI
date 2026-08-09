@@ -1,179 +1,228 @@
 from __future__ import annotations
 
 import re
+from typing import List, Optional, Tuple
 
 from app.agents.base_agent import BaseAgent
 from app.core.logger import logger
 from app.models.task import Task
 from app.services.llm.router import LLMRouter
+from app.memory.memory_manager import MemoryManager
+
+from app.project.project_context import ProjectContext
 
 
 class CoderAgent(BaseAgent):
     """
     Converts a Planner Task into a complete executable project.
 
-    The LLM must return files in this format:
+    Expected LLM output format:
 
     FILE: app.py
-    import argparse
+    print("Hello")
 
     FILE: requirements.txt
-    pytest
-
-    FILE: tests/test_app.py
-    def test_example():
-        assert True
+    fastapi
     """
 
     MIN_RESPONSE_LENGTH = 50
     MAX_FILE_PATH_LENGTH = 250
+    MAX_FILES = 150
 
-    FORBIDDEN_PATH_PATTERNS = (
-        ".env",
-        ".env.local",
-        ".env.production",
-        ".env.development",
-        "id_rsa",
-        "id_ed25519",
-        ".pem",
-        ".key",
-        "__pycache__",
-        ".pyc",
-        "node_modules",
-        ".git/",
+    LANGUAGE_PATTERN = re.compile(
+        r"(?m)"
+        r"^(FILE:\s*[^\r\n]+)"
+        r"(\r?\n)"
+        r"(python|py|javascript|js|typescript|ts|"
+        r"json|html|css|java|cpp|c\+\+|c|"
+        r"bash|shell|sh|yaml|yml|markdown|md|"
+        r"text|plaintext)"
+        r"(\r?\n)",
+        flags=re.IGNORECASE,
     )
 
-    LANGUAGE_LABELS = {
-        "python",
-        "py",
-        "javascript",
-        "js",
-        "typescript",
-        "ts",
-        "json",
-        "html",
-        "css",
-        "java",
-        "cpp",
-        "c++",
-        "c",
-        "bash",
-        "shell",
-        "sh",
-        "yaml",
-        "yml",
-        "markdown",
-        "md",
-        "text",
-        "plaintext",
-    }
+    FILE_PATTERN = re.compile(
+        r"(?m)^FILE:\s*(.+?)\s*$"
+    )
+
+    # ==========================================================
+    # INIT
+    # ==========================================================
+
+    def __init__(self, *args, **kwargs):
+
+        super().__init__(*args, **kwargs)
+
+        self.project_context = ProjectContext()
 
     # ==========================================================
     # MAIN
     # ==========================================================
 
-    async def run(self, task: Task) -> str:
+    async def run(
+        self,
+        task: Task,
+        project_directory: str | None = None,
+        memory: Optional[MemoryManager] = None,
+    ) -> str:
 
-        logger.info("=" * 60)
+        logger.info("=" * 70)
         logger.info("Coder Agent Started")
-        logger.info("=" * 60)
+        logger.info("=" * 70)
 
-        if task is None:
-            raise ValueError(
-                "CoderAgent received an empty task."
-            )
-
-        if not task.title:
-            raise ValueError(
-                "Task title is required."
-            )
-
-        if not task.description:
-            raise ValueError(
-                "Task description is required."
-            )
-
-        # ------------------------------------------------------
-        # Get LLM
-        # ------------------------------------------------------
+        self._validate_task(task)
 
         llm = LLMRouter.get_llm()
 
-        # ------------------------------------------------------
-        # Format Planner Steps
-        # ------------------------------------------------------
+        # Use the shared MemoryManager passed in by the orchestrator so
+        # generations build on past learnings. Falls back to a fresh
+        # instance if the agent is run standalone (no history in that
+        # case).
+        memory = memory or MemoryManager()
+
+        memory_items = memory.retrieve(
+            prompt=f"{task.title}\n{task.description}",
+            limit=10,
+        )
+
+        memory_context = memory.build_context(
+            memory_items
+        )
 
         steps = "\n".join(
-            f"{index}. {step}"
-            for index, step in enumerate(
-                task.steps or [],
+            f"{i}. {step.strip()}"
+            for i, step in enumerate(
+                filter(None, task.steps or []),
                 start=1,
             )
         )
 
-        # ------------------------------------------------------
-        # Build Prompt
-        # ------------------------------------------------------
+        project_context = self._build_project_context(
+            project_directory
+        )
 
         prompt = self._build_prompt(
             task=task,
             steps=steps,
+            memory_context=memory_context,
+            project_context=project_context,
         )
 
-        logger.info(
-            "Generating complete software project..."
-        )
+        logger.info("Sending project generation request to LLM...")
 
-        # ------------------------------------------------------
-        # Generate
-        # ------------------------------------------------------
+        try:
 
-        response = await llm.generate(prompt)
+            response = await llm.generate(prompt)
+
+        except Exception as exc:
+
+            logger.exception(
+                f"Project generation failed: {exc}"
+            )
+
+            raise RuntimeError(
+                "LLM project generation failed."
+            ) from exc
 
         if response is None:
             raise RuntimeError(
-                "Coder Agent received None from LLM."
+                "LLM returned None."
             )
 
-        if not isinstance(response, str):
-            response = str(response)
-
-        response = response.strip()
+        response = str(response).strip()
 
         if not response:
             raise RuntimeError(
-                "Coder Agent received an empty response from LLM."
+                "LLM returned an empty response."
             )
 
         logger.info(
-            f"Raw coder response length: {len(response)}"
+            f"Raw response size: {len(response)} characters"
         )
 
-        # ------------------------------------------------------
-        # Normalize
-        # ------------------------------------------------------
+        response = self._normalize_response(response)
 
-        response = self._normalize_response(
-            response
-        )
+        self._validate_response(response)
 
-        # ------------------------------------------------------
-        # Validate
-        # ------------------------------------------------------
-
-        self._validate_response(
-            response
-        )
-
-        logger.info(
-            "Coder Agent generated valid project output."
-        )
-
-        logger.info("=" * 60)
+        logger.info("Project generation successful.")
+        logger.info("=" * 70)
         logger.info("Coder Agent Finished")
-        logger.info("=" * 60)
+        logger.info("=" * 70)
+
+        try:
+            memory.save(
+                memory_type="generation",
+                prompt=f"{task.title}\n{task.description}",
+                language="Python",
+                framework="FastAPI",
+                review=(
+                    f"Generated {len(self.get_file_blocks(response))} files."
+                ),
+                success=True,
+            )
+        except Exception:
+            logger.exception("Failed to save generation memory.")
 
         return response
+
+    # ==========================================================
+    # TASK VALIDATION
+    # ==========================================================
+
+    def _validate_task(self, task: Task) -> None:
+
+        if task is None:
+            raise ValueError(
+                "Task cannot be None."
+            )
+
+        if not task.title or not task.title.strip():
+            raise ValueError(
+                "Task title cannot be empty."
+            )
+
+        if not task.description or not task.description.strip():
+            raise ValueError(
+                "Task description cannot be empty."
+            )
+
+    # ==========================================================
+    # PROJECT CONTEXT
+    # ==========================================================
+
+    def _build_project_context(
+        self,
+        project_directory: str | None,
+    ) -> str:
+        """
+        Analyze an existing project directory (if given) and return
+        a compact LLM-ready context string. Never raises — analysis
+        failures fall back to an empty context so generation can
+        still proceed.
+        """
+
+        if not project_directory:
+            return ""
+
+        logger.info(
+            "Analyzing existing project..."
+        )
+
+        try:
+
+            self.project_context.build(project_directory)
+
+            return self.project_context.build_llm_context(
+                max_chars=8000
+            )
+
+        except Exception:
+
+            logger.exception(
+                "Project analysis failed."
+            )
+
+            return ""
 
     # ==========================================================
     # PROMPT
@@ -183,200 +232,171 @@ class CoderAgent(BaseAgent):
         self,
         task: Task,
         steps: str,
+        memory_context: str,
+        project_context: str,
     ) -> str:
 
         return f"""
-You are AutoDev AI, an autonomous software engineer.
+You are AutoDev AI.
 
-Generate a COMPLETE, EXECUTABLE software project.
+You are an elite autonomous software engineer.
 
-============================================================
+Generate a COMPLETE executable software project.
+
+====================================================
 PROJECT
-============================================================
+====================================================
 
-PROJECT TITLE:
+Title:
 {task.title}
 
-PROJECT DESCRIPTION:
+Description:
 {task.description}
 
-IMPLEMENTATION PLAN:
-{steps or "No implementation steps were provided."}
+====================================================
+EXISTING PROJECT
+====================================================
 
-============================================================
-IMPORTANT PROJECT RULES
-============================================================
+{project_context or "No existing project."}
 
-1. Choose the simplest appropriate technology.
-2. Do not add unnecessary frameworks.
-3. Do not add unnecessary databases.
-4. Do not add unnecessary Docker configuration.
-5. Preserve the requested functionality.
-6. Every required source file must be complete.
-7. Every import must be valid.
-8. Every dependency must actually exist.
-9. Every entry point must be executable.
-10. Do not generate fake implementations.
-11. Do not generate TODO placeholders.
-12. Do not generate FIXME placeholders.
-13. Do not generate pseudocode.
-14. Do not generate real secrets.
-15. Never create .env files.
-16. Use .env.example for configuration examples.
-17. Generate real executable tests when appropriate.
+====================================================
+PREVIOUS LEARNINGS
+====================================================
 
-============================================================
-PYTHON REQUIREMENTS
-============================================================
+{memory_context or "No previous learning available."}
 
-If Python is selected:
+====================================================
+IMPLEMENTATION PLAN
+====================================================
 
-- Use valid Python syntax.
-- Generate requirements.txt only when dependencies are needed.
-- Use pytest for tests when appropriate.
-- Ensure entry points work.
-- Avoid interactive programs unless explicitly required.
-- CLI applications must provide valid command/help behavior.
-- Do not leave variables undefined.
-- Handle invalid input safely.
-- Handle division by zero where applicable.
-- Do not put a language name such as "python" on the
-  first line of a Python source file.
+{steps or "No implementation steps provided."}
 
-============================================================
-NODE REQUIREMENTS
-============================================================
+====================================================
+RULES
+====================================================
 
-If Node.js is selected:
+• Generate COMPLETE source code.
 
-- package.json must be valid JSON.
-- All imports must match installed dependencies.
-- The start entry point must exist.
-- Use correct CommonJS or ESM configuration.
-- Do not mix require() and import incorrectly.
+• Never generate partial implementations.
 
-============================================================
-TESTING REQUIREMENTS
-============================================================
+• Never generate TODO comments.
 
-Generate real executable tests when appropriate.
+• Never generate FIXME comments.
 
-Python:
-- Prefer pytest.
-- Tests must actually test application functionality.
+• Never generate pseudocode.
 
-Node.js:
-- Use an appropriate test framework only when required.
-- Tests must actually execute.
+• Never generate placeholder functions.
 
-Do not generate fake tests that only assert True unless
-the project genuinely requires a basic smoke test.
+• Every import must exist.
 
-============================================================
-README REQUIREMENTS
-============================================================
+• Every dependency must exist.
 
-When a README is appropriate, include:
+• Every source file must compile.
 
-1. Project overview
-2. Features
-3. Technology stack
-4. Project structure
-5. Installation
-6. Configuration
-7. Environment variables
-8. Usage
-9. API documentation when applicable
-10. Running the application
-11. Running tests
-12. Deployment information when applicable
+• Never create real secrets.
 
-============================================================
-SECURITY
-============================================================
+• Never create .env.
 
-Never generate real:
+Use .env.example instead.
 
-- API keys
-- passwords
-- private keys
-- access tokens
-- credentials
-- secrets
+====================================================
+EXISTING PROJECT RULES
+====================================================
 
-Never create an actual .env file.
+If an existing project is provided above:
 
-Use .env.example when environment configuration is needed.
+• Modify existing files whenever possible.
 
-============================================================
+• Reuse the existing architecture.
+
+• Never recreate files that already exist unless a change is required.
+
+• Preserve the existing coding style.
+
+• Preserve existing APIs.
+
+• Preserve existing naming conventions.
+
+• Only generate new files when strictly necessary.
+
+• Do not regenerate the entire project from scratch.
+
+====================================================
+PYTHON
+====================================================
+
+If using Python:
+
+• Generate requirements.txt when needed.
+
+• NEVER include built-in Python modules in requirements.txt
+  (tkinter, sqlite3, json, os, sys, typing, pathlib, logging,
+  asyncio, etc.) — these are part of the standard library and
+  will fail to install via pip.
+
+• Use pytest for testing.
+
+• Entry point must execute correctly.
+
+• No syntax errors.
+
+====================================================
+NODE
+====================================================
+
+If using Node:
+
+• package.json must be valid.
+
+• Imports must match dependencies.
+
+• npm start must work.
+
+====================================================
 OUTPUT FORMAT
-============================================================
-
-THIS IS EXTREMELY IMPORTANT.
+====================================================
 
 Return ONLY project files.
 
-Every file MUST begin with:
+Every file MUST begin exactly with:
 
-FILE: relative/path/to/file.ext
+FILE: relative/path
 
 Example:
 
 FILE: app.py
-import argparse
+
+print("Hello")
 
 FILE: requirements.txt
-pytest
 
-FILE: tests/test_app.py
-def test_example():
-    assert 1 + 1 == 2
+fastapi
 
-============================================================
-STRICT FILE RULES
-============================================================
+====================================================
+STRICT RULES
+====================================================
 
-- Start immediately with FILE:
-- Do not write anything before the first FILE:
-- Do not write anything after the final file.
-- Do not use markdown code fences.
-- Do not write ```python.
-- Do not write ```javascript.
-- Do not write ```json.
-- Do not write language names before source code.
-- Do not explain the files.
-- Do not provide a summary.
-- Do not provide analysis.
+Start immediately with FILE:
 
-A file must look like:
+Do NOT use markdown.
 
-FILE: app.py
-import argparse
+Do NOT use code fences.
 
-NOT:
+Do NOT explain anything.
 
-FILE: app.py
-python
-import argparse
+Do NOT summarize.
 
-NOT:
+Do NOT write analysis.
 
-FILE: app.py
-```python
-import argparse
+Do NOT output anything except FILE blocks.
 
-============================================================
-FINAL REQUIREMENT
-============================================================
+Every imported package must exist.
 
-The generated project must be executable without manual
-modification.
+Every dependency must be installed.
 
-Start the response immediately with:
+Every generated file must be executable.
 
-FILE:
-
-Return ONLY the FILE blocks.
+Return ONLY FILE blocks.
 """
 
     # ==========================================================
@@ -388,26 +408,20 @@ Return ONLY the FILE blocks.
         response: str,
     ) -> str:
         """
-        Clean common formatting mistakes from the LLM response.
+        Normalize the LLM response into clean FILE blocks.
         """
 
         response = response.strip()
 
-        # ------------------------------------------------------
-        # Remove opening markdown fences
-        # ------------------------------------------------------
-
+        # Remove opening markdown fence
         response = re.sub(
-            r"^\s*```(?:text|plaintext)?\s*",
+            r"^\s*```(?:\w+)?\s*",
             "",
             response,
             flags=re.IGNORECASE,
         )
 
-        # ------------------------------------------------------
         # Remove closing markdown fence
-        # ------------------------------------------------------
-
         response = re.sub(
             r"\s*```\s*$",
             "",
@@ -416,25 +430,21 @@ Return ONLY the FILE blocks.
 
         response = response.strip()
 
-        # ------------------------------------------------------
-        # Remove accidental text before FILE:
-        # ------------------------------------------------------
-
+        # Remove any text before the first FILE:
         first_file = response.find("FILE:")
+
+        if first_file == -1:
+            raise RuntimeError(
+                "LLM response contains no FILE blocks."
+            )
 
         if first_file > 0:
 
             logger.warning(
-                "Removing text before first FILE: marker."
+                "Discarding text before first FILE block."
             )
 
-            response = response[
-                first_file:
-            ]
-
-        # ------------------------------------------------------
-        # Remove accidental language labels after FILE:
-        # ------------------------------------------------------
+            response = response[first_file:]
 
         response = self._remove_language_labels(
             response
@@ -451,29 +461,95 @@ Return ONLY the FILE blocks.
         response: str,
     ) -> str:
         """
-        Remove accidental language labels such as:
+        Removes accidental language labels.
+
+        Example:
 
         FILE: app.py
         python
-        import argparse
 
-        The word 'python' should not become part of app.py.
+        becomes
+
+        FILE: app.py
         """
 
-        pattern = re.compile(
-            r"(?m)"
-            r"^(FILE:\s*[^\r\n]+)"
-            r"(\r?\n)"
-            r"(python|py|javascript|js|typescript|ts|"
-            r"json|html|css|java|cpp|c\+\+|c|bash|shell|sh|"
-            r"yaml|yml|markdown|md|text|plaintext)"
-            r"(\r?\n)",
-            flags=re.IGNORECASE,
-        )
-
-        return pattern.sub(
+        return self.LANGUAGE_PATTERN.sub(
             r"\1\2\4",
             response,
+        )
+
+    # ==========================================================
+    # EXTRACT FILE BLOCKS
+    # ==========================================================
+
+    def _extract_file_blocks(
+        self,
+        response: str,
+    ) -> List[Tuple[str, str]]:
+        """
+        Splits a generated project into FILE blocks.
+
+        Returns
+
+        [
+            ("app.py", "..."),
+            ("requirements.txt", "..."),
+        ]
+        """
+
+        matches = list(
+            self.FILE_PATTERN.finditer(response)
+        )
+
+        if not matches:
+            return []
+
+        files: List[Tuple[str, str]] = []
+
+        for index, match in enumerate(matches):
+
+            path = match.group(1).strip()
+
+            start = match.end()
+
+            if index + 1 < len(matches):
+                end = matches[index + 1].start()
+            else:
+                end = len(response)
+
+            content = (
+                response[start:end]
+                .replace("\r\n", "\n")
+                .strip()
+            )
+
+            files.append(
+                (
+                    path,
+                    content,
+                )
+            )
+
+        return files
+
+    # ==========================================================
+    # DEBUG HELPER
+    # ==========================================================
+
+    def get_file_blocks(
+        self,
+        response: str,
+    ) -> List[Tuple[str, str]]:
+        """
+        Public helper for debugging/testing.
+        """
+
+        response = self._normalize_response(
+            response
+        )
+
+        return self._extract_file_blocks(
+            response
         )
 
     # ==========================================================
@@ -485,28 +561,22 @@ Return ONLY the FILE blocks.
         response: str,
     ) -> None:
         """
-        Validate that the coder response contains valid
-        FILE blocks.
+        Validate the generated project before returning it.
         """
 
         if not response:
-
             raise RuntimeError(
-                "Coder Agent returned an empty project."
+                "Generated project is empty."
             )
 
         if len(response) < self.MIN_RESPONSE_LENGTH:
-
             raise RuntimeError(
-                "Coder Agent response is too short "
-                "to be a project."
+                "Generated project is too small."
             )
 
         if not response.startswith("FILE:"):
-
             raise RuntimeError(
-                "Invalid coder output. "
-                "Project must start with FILE:."
+                "Project must start with 'FILE:'."
             )
 
         file_blocks = self._extract_file_blocks(
@@ -514,100 +584,50 @@ Return ONLY the FILE blocks.
         )
 
         if not file_blocks:
-
             raise RuntimeError(
-                "Coder Agent generated no project files."
+                "No FILE blocks found."
+            )
+
+        if len(file_blocks) > self.MAX_FILES:
+            raise RuntimeError(
+                f"Project contains too many files "
+                f"({len(file_blocks)})."
             )
 
         logger.info(
-            f"Coder generated {len(file_blocks)} file(s)."
+            "Generated %d files.",
+            len(file_blocks),
         )
+
+        seen = set()
 
         for path, content in file_blocks:
 
-            self._validate_file_path(
-                path
-            )
+            self._validate_file_path(path)
+
+            normalized = path.lower()
+
+            if normalized in seen:
+                raise RuntimeError(
+                    f"Duplicate file detected: {path}"
+                )
+
+            seen.add(normalized)
 
             if not content.strip():
-
                 raise RuntimeError(
-                    f"Generated file is empty: {path}"
+                    f"Empty generated file: {path}"
+                )
+
+            if len(content.strip()) < 3:
+                raise RuntimeError(
+                    f"Generated file appears incomplete: {path}"
                 )
 
             logger.debug(
-                f"Validated generated file: {path}"
+                "Validated file: %s",
+                path,
             )
-
-    # ==========================================================
-    # EXTRACT FILE BLOCKS
-    # ==========================================================
-
-    def _extract_file_blocks(
-        self,
-        response: str,
-    ) -> list[tuple[str, str]]:
-        """
-        Extract FILE blocks.
-
-        Example:
-
-        FILE: app.py
-        print("Hello")
-
-        FILE: README.md
-        # Project
-        """
-
-        pattern = re.compile(
-            r"(?m)^FILE:\s*(.+?)\s*$"
-        )
-
-        matches = list(
-            pattern.finditer(
-                response
-            )
-        )
-
-        if not matches:
-            return []
-
-        files: list[
-            tuple[str, str]
-        ] = []
-
-        for index, match in enumerate(matches):
-
-            path = match.group(
-                1
-            ).strip()
-
-            content_start = match.end()
-
-            if index + 1 < len(matches):
-
-                content_end = matches[
-                    index + 1
-                ].start()
-
-            else:
-
-                content_end = len(
-                    response
-                )
-
-            content = response[
-                content_start:content_end
-            ].strip()
-
-            files.append(
-                (
-                    path,
-                    content,
-                )
-            )
-
-        return files
 
     # ==========================================================
     # FILE PATH VALIDATION
@@ -622,105 +642,95 @@ Return ONLY the FILE blocks.
         """
 
         if not path:
-
             raise RuntimeError(
-                "Generated file contains an empty path."
+                "Generated file path is empty."
             )
 
         if len(path) > self.MAX_FILE_PATH_LENGTH:
-
             raise RuntimeError(
-                f"Generated file path is too long: {path}"
+                f"Path too long: {path}"
             )
 
-        # ------------------------------------------------------
-        # Normalize Windows separators
-        # ------------------------------------------------------
-
-        normalized = path.replace(
-            "\\",
-            "/",
-        )
-
-        # ------------------------------------------------------
-        # Absolute Unix path
-        # ------------------------------------------------------
+        normalized = path.replace("\\", "/").strip()
 
         if normalized.startswith("/"):
-
             raise RuntimeError(
-                f"Absolute file path is not allowed: {path}"
+                f"Absolute Unix path not allowed: {path}"
             )
 
-        # ------------------------------------------------------
-        # Windows drive path
-        # ------------------------------------------------------
-
-        if re.match(
-            r"^[A-Za-z]:",
-            normalized,
-        ):
-
+        if re.match(r"^[A-Za-z]:", normalized):
             raise RuntimeError(
-                "Absolute Windows path is not allowed: "
-                f"{path}"
+                f"Absolute Windows path not allowed: {path}"
             )
-
-        # ------------------------------------------------------
-        # Directory traversal
-        # ------------------------------------------------------
 
         parts = normalized.split("/")
 
         if ".." in parts:
-
             raise RuntimeError(
-                f"Directory traversal is not allowed: {path}"
+                f"Directory traversal detected: {path}"
             )
 
-        # ------------------------------------------------------
-        # Empty path components
-        # ------------------------------------------------------
-
-        if any(
-            not part.strip()
-            for part in parts
-        ):
-
+        if any(part.strip() == "" for part in parts):
             raise RuntimeError(
-                f"Invalid file path: {path}"
+                f"Invalid path: {path}"
             )
 
-        # ------------------------------------------------------
-        # Forbidden files
-        # ------------------------------------------------------
+        filename = parts[-1]
 
-        lower_path = normalized.lower()
+        if "." not in filename:
+            raise RuntimeError(
+                f"Filename has no extension: {path}"
+            )
 
-        for forbidden in self.FORBIDDEN_PATH_PATTERNS:
+        lower = normalized.lower()
 
-            if forbidden in lower_path:
+        # Allow .env.example
+        if lower == ".env.example":
+            logger.debug("Allowed path: %s", path)
+            return
 
+        # Block only exact dangerous filenames
+        forbidden_files = {
+            ".env",
+            ".env.local",
+            ".env.production",
+            ".env.development",
+            "id_rsa",
+            "id_ed25519",
+        }
+
+        if filename.lower() in forbidden_files:
+            raise RuntimeError(
+                f"Forbidden file generated: {path}"
+            )
+
+        # Block dangerous directories
+        forbidden_dirs = {
+            "__pycache__",
+            "node_modules",
+            ".git",
+        }
+
+        for part in parts[:-1]:
+            if part.lower() in forbidden_dirs:
                 raise RuntimeError(
-                    f"Forbidden file path generated: {path}"
+                    f"Forbidden directory generated: {path}"
                 )
 
-    # ==========================================================
-    # DEBUG INFORMATION
-    # ==========================================================
+        # Block dangerous extensions
+        forbidden_extensions = {
+            ".pem",
+            ".key",
+            ".pyc",
+        }
 
-    def get_file_blocks(
-        self,
-        response: str,
-    ) -> list[tuple[str, str]]:
-        """
-        Public helper useful for debugging and testing.
-        """
+        for ext in forbidden_extensions:
+            if filename.lower().endswith(ext):
+                raise RuntimeError(
+                    f"Forbidden file generated: {path}"
+                )
 
-        normalized = self._normalize_response(
-            response
-        )
-
-        return self._extract_file_blocks(
-            normalized
+        logger.debug(
+            "Validated path: %s",
+            path,
         )

@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     # Project Generation
     # --------------------------------------------------
 
-    GENERATED_PROJECTS_DIR: str = "generated_projects"
+    GENERATED_PROJECTS_DIR: str = "../generated_projects"
 
     # --------------------------------------------------
     # Logging

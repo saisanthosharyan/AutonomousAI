@@ -1,44 +1,95 @@
-# -----------------------------
+# ==============================
 # Python
-# -----------------------------
+# ==============================
+
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+*.so
 
+# ==============================
 # Virtual Environment
-.venv/
+# ==============================
 
-# Environment Variables
+.venv/
+venv/
+env/
+
+# ==============================
+# Environment Variables / Secrets
+# ==============================
+
 .env
+.env.*
+!.env.example
+
+backend.env
 backend/.env
 
-# VS Code
-.vscode/
-
+# ==============================
 # Databases
+# ==============================
+
 *.db
+*.sqlite
 *.sqlite3
 
+# ==============================
 # Logs
+# ==============================
+
 *.log
+logs/
 
-# Build
-dist/
+# ==============================
+# Build / Distribution
+# ==============================
+
 build/
+dist/
+*.egg-info/
 
+# ==============================
 # ChromaDB
+# ==============================
+
 chroma_db/
 
-# OS Files
+# ==============================
+# AutoDev AI Generated Projects
+# ==============================
+
+generated_projects/
+
+# Archives
+*.zip
+
+# ==============================
+# Runtime Memory
+# ==============================
+
+backend/memory/
+backend/memory_store.json
+
+# ==============================
+# Generated Project Metadata
+# ==============================
+
+backend/project_structure.txt
+backend/project_tree.txt
+
+# ==============================
+# IDE
+# ==============================
+
+.vscode/
+.idea/
+
+# ==============================
+# OS
+# ==============================
+
 .DS_Store
 Thumbs.db
-
-generated_projects/
-*.zip
-
-generated_projects/
-*.zip
-__pycache__/
-.env
-backend/test_models.py
+desktop.ini

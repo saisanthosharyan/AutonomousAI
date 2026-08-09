@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from app.services.llm.router import LLMRouter
 
 
-class TestPlan(BaseModel):
+class PlanSchema(BaseModel):
     project_name: str = Field(
         description="Name of the project"
     )
@@ -54,7 +54,7 @@ The application should support:
 
     result = await llm.generate_structured(
         prompt,
-        TestPlan,
+        PlanSchema,
     )
 
     print("=" * 60)

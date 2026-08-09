@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-import shutil
+import subprocess
 import time
+from dataclasses import dataclass, field, asdict
 from pathlib import Path
+from typing import Dict, Optional, Protocol, runtime_checkable
 
 from app.core.logger import logger
 
@@ -13,16 +15,70 @@ from app.services.execution.cpp_executor import CPPExecutor
 from app.services.execution.docker_executor import DockerExecutor
 from app.services.execution.execution_logger import ExecutionLogger
 
+# Single source of truth for project-type / language / framework detection.
+# ExecutionManager no longer re-implements detection heuristics of its own —
+# it only knows how to run things once it's told what it's dealing with.
+from app.project.project_analyzer import ProjectAnalyzer
+
+
+@runtime_checkable
+class Executor(Protocol):
+    """
+    Minimal structural type for executors: anything with a
+    `run(project_path)` method qualifies. This gives us type
+    safety without depending on a concrete BaseExecutor class
+    that may not exist yet in the project.
+    """
+
+    def run(self, project_path: str) -> dict: ...
+
+
+@dataclass
+class ExecutionResult:
+    """
+    Structured result of a project execution attempt.
+
+    Replaces the previous ad-hoc dict so callers (Reviewer, Fixer,
+    ExecutionLogger, API layer) get a consistent, typed contract
+    instead of relying on dict key conventions.
+    """
+
+    success: bool = False
+    stdout: str = ""
+    stderr: str = ""
+    return_code: int = -1
+    execution_time: float = 0.0
+    project_type: str = "unknown"
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
 
 class ExecutionManager:
     """
-    Detects the generated project type and executes it
-    using the appropriate executor.
+    Executes a generated project using the appropriate executor,
+    based on the project type reported by ProjectAnalyzer.
+
+    Supported project types:
+
+    • Python
+    • Node.js
+    • Java
+    • C++
+    • Docker
+
+    If Docker execution is unavailable, the manager automatically
+    falls back to the underlying native executor (as reported by
+    ProjectAnalyzer for the non-docker case).
     """
 
-    def __init__(self):
+    # ==========================================================
+    # INITIALIZATION
+    # ==========================================================
 
-        self.executors = {
+    def __init__(self, analyzer: Optional[ProjectAnalyzer] = None) -> None:
+
+        self.executors: Dict[str, Executor] = {
             "python": PythonExecutor(),
             "node": NodeExecutor(),
             "java": JavaExecutor(),
@@ -30,18 +86,57 @@ class ExecutionManager:
             "docker": DockerExecutor(),
         }
 
+        # Allow injection for testing / reuse of an already-configured
+        # analyzer; default to a fresh one otherwise.
+        self.analyzer = analyzer or ProjectAnalyzer()
+
+        logger.info(
+            "ExecutionManager initialized with %d executors.",
+            len(self.executors),
+        )
+
     # ==========================================================
-    # DETECT PROJECT TYPE
+    # DOCKER AVAILABILITY
     # ==========================================================
 
-    def detect_project_type(
-        self,
-        project_path: str,
-    ) -> str:
+    def _docker_available(self) -> bool:
+        """
+        Check that Docker is not just installed, but actually
+        running and reachable (`docker info` succeeds).
+        """
 
-        project = Path(
-            project_path
-        ).resolve()
+        try:
+            subprocess.run(
+                ["docker", "info"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                check=True,
+            )
+            return True
+
+        except Exception:
+            logger.warning(
+                "Docker installed but unavailable (daemon not running?)."
+            )
+            return False
+
+    # ==========================================================
+    # DETECT PROJECT TYPE (delegated to ProjectAnalyzer)
+    # ==========================================================
+
+    def detect_project_type(self, project_path: str) -> str:
+        """
+        Delegate detection to ProjectAnalyzer, the single source of
+        truth for language/framework/test-framework/entry-point
+        detection across ExecutionManager and TestManager.
+
+        Execution-specific nuance (Docker daemon reachability) is
+        still handled here, since that's runtime environment state,
+        not project structure.
+        """
+
+        project = Path(project_path).resolve()
 
         if not project.exists():
             raise FileNotFoundError(
@@ -53,76 +148,89 @@ class ExecutionManager:
                 f"Project path is not a directory: {project}"
             )
 
-        logger.info(
-            f"Detecting project type: {project}"
-        )
+        logger.info("Detecting project type: %s", project)
 
-        # Docker
-        dockerfile = project / "Dockerfile"
+        detected = self.analyzer.detect(str(project))
 
-        if dockerfile.exists():
-
-            if shutil.which("docker"):
-
-                logger.info(
-                    "Docker project detected."
-                )
-
-                return "docker"
+        # If the analyzer says "docker" but the daemon isn't actually
+        # reachable, fall back to whatever the analyzer would report
+        # for a non-docker execution of the same project.
+        if detected == "docker" and not self._docker_available():
 
             logger.warning(
-                "Dockerfile detected, but Docker "
-                "is unavailable."
+                "Dockerfile exists but Docker is not usable; "
+                "falling back to native detection."
             )
 
-        # Node
-        if (
-            project / "package.json"
-        ).exists():
+            fallback = self.analyzer.detect(
+                str(project),
+                exclude={"docker"},
+            )
 
-            return "node"
+            return fallback or "unknown"
 
-        # Python
-        if self._contains_python(
-            project
-        ):
-            return "python"
+        logger.info("Detected project type: %s", detected)
 
-        # Java
-        if any(
-            project.rglob("*.java")
-        ):
-            return "java"
-
-        # C++
-        if (
-            any(project.rglob("*.cpp"))
-            or any(project.rglob("*.cc"))
-            or any(project.rglob("*.cxx"))
-        ):
-            return "cpp"
-
-        return "unknown"
+        return detected or "unknown"
 
     # ==========================================================
-    # RUN
+    # GET EXECUTOR
     # ==========================================================
 
-    def run(
-        self,
-        project_path: str,
-    ) -> dict:
+    def _get_executor(self, project_type: str) -> Executor:
 
-        start_time = time.time()
+        executor = self.executors.get(project_type)
 
-        result = {
-            "success": False,
-            "stdout": "",
-            "stderr": "",
-            "return_code": -1,
-            "execution_time": 0,
-            "project_type": "unknown",
-        }
+        if executor is None:
+            raise RuntimeError(
+                f"No executor registered for '{project_type}'."
+            )
+
+        if not hasattr(executor, "run"):
+            raise RuntimeError(
+                f"Executor '{project_type}' has no run() method."
+            )
+
+        return executor
+
+    # ==========================================================
+    # NORMALIZE EXECUTOR RESULT
+    # ==========================================================
+
+    @staticmethod
+    def _normalize_execution_result(execution_result: object) -> dict:
+        """
+        Guarantee that whatever an executor returns is usable as
+        a dict downstream. Executors are third-party-ish code
+        (one per language); a buggy one returning None, a string,
+        a list, or anything else shouldn't crash the manager.
+        """
+
+        if not isinstance(execution_result, dict):
+
+            logger.warning(
+                "Executor returned a non-dict result (%s); normalizing.",
+                type(execution_result).__name__,
+            )
+
+            return {
+                "success": False,
+                "stdout": "",
+                "stderr": "Executor returned invalid result.",
+                "return_code": -1,
+            }
+
+        return execution_result
+
+    # ==========================================================
+    # RUN PROJECT
+    # ==========================================================
+
+    def run(self, project_path: str) -> ExecutionResult:
+
+        start_time = time.perf_counter()
+
+        result = ExecutionResult()
 
         logger.info("=" * 60)
         logger.info("Execution Manager Started")
@@ -130,251 +238,147 @@ class ExecutionManager:
 
         try:
 
-            project_type = (
-                self.detect_project_type(
-                    project_path
-                )
-            )
+            # --------------------------------------------------
+            # Detect project type
+            # --------------------------------------------------
 
-            result["project_type"] = (
-                project_type
-            )
+            project_type = self.detect_project_type(project_path)
+
+            result.project_type = project_type
 
             if project_type == "unknown":
-
-                result["stderr"] = (
-                    "Unable to detect generated "
-                    "project type."
-                )
-
+                result.stderr = "Unable to detect generated project type."
                 return result
 
-            executor = self.executors.get(
-                project_type
+            # --------------------------------------------------
+            # Get executor
+            # --------------------------------------------------
+
+            executor = self._get_executor(project_type)
+
+            logger.info("Using %s executor.", project_type)
+
+            # --------------------------------------------------
+            # Execute project
+            # --------------------------------------------------
+
+            execution_result = executor.run(project_path)
+
+            execution_result = self._normalize_execution_result(
+                execution_result
             )
 
-            if executor is None:
+            # --------------------------------------------------
+            # Docker fallback (executor itself opted to skip, e.g.
+            # image build failed for a reason short of "unavailable")
+            # --------------------------------------------------
 
-                result["stderr"] = (
-                    f"No executor registered for "
-                    f"project type: {project_type}"
-                )
-
-                return result
-
-            logger.info(
-                f"Using executor: {project_type}"
-            )
-
-            execution_result = executor.run(
-                project_path
-            )
-
-            if execution_result is None:
-
-                execution_result = {
-                    "success": False,
-                    "stdout": "",
-                    "stderr": (
-                        "Executor returned None."
-                    ),
-                    "return_code": -1,
-                }
-
-            # Docker fallback
-            if (
-                project_type == "docker"
-                and execution_result.get(
-                    "skip",
-                    False,
-                )
+            if project_type == "docker" and execution_result.get(
+                "skip", False
             ):
 
-                fallback_type = (
-                    self._detect_non_docker_type(
-                        project_path
-                    )
+                fallback = self.analyzer.detect(
+                    project_path,
+                    exclude={"docker"},
                 )
 
-                if fallback_type:
+                if fallback and fallback != "unknown":
 
-                    fallback_executor = (
-                        self.executors.get(
-                            fallback_type
-                        )
+                    logger.info(
+                        "Docker skipped. Falling back to %s.",
+                        fallback,
                     )
 
-                    if fallback_executor:
+                    fallback_executor = self._get_executor(fallback)
 
-                        logger.info(
-                            f"Docker fallback: "
-                            f"{fallback_type}"
-                        )
+                    execution_result = self._normalize_execution_result(
+                        fallback_executor.run(project_path)
+                    )
 
-                        execution_result = (
-                            fallback_executor.run(
-                                project_path
-                            )
-                        )
+                    result.project_type = fallback
 
-                        result[
-                            "project_type"
-                        ] = fallback_type
+            # --------------------------------------------------
+            # Normalize result
+            # --------------------------------------------------
 
-            result.update(
-                {
-                    "success": bool(
-                        execution_result.get(
-                            "success",
-                            False,
-                        )
-                    ),
-                    "stdout": (
-                        execution_result.get(
-                            "stdout",
-                            "",
-                        )
-                        or ""
-                    ),
-                    "stderr": (
-                        execution_result.get(
-                            "stderr",
-                            "",
-                        )
-                        or ""
-                    ),
-                    "return_code": (
-                        execution_result.get(
-                            "return_code",
-                            -1,
-                        )
-                    ),
-                }
+            result.success = bool(execution_result.get("success", False))
+            result.stdout = str(execution_result.get("stdout", "") or "")
+            result.stderr = str(execution_result.get("stderr", "") or "")
+            result.return_code = int(
+                execution_result.get("return_code", -1)
             )
 
             return result
 
         except Exception as exc:
 
-            logger.exception(
-                "Execution Manager failed."
-            )
+            logger.exception("Execution Manager crashed.")
 
-            result.update(
-                {
-                    "success": False,
-                    "stderr": str(exc),
-                    "return_code": -1,
-                }
-            )
+            result.success = False
+            result.stderr = str(exc)
+            result.return_code = -1
 
             return result
 
         finally:
 
-            result["execution_time"] = round(
-                time.time() - start_time,
-                2,
+            result.execution_time = round(
+                time.perf_counter() - start_time, 3
             )
 
             try:
-
-                ExecutionLogger(
-                    project_path
-                ).save(
-                    result
-                )
+                ExecutionLogger(project_path).save(result.to_dict())
 
             except Exception:
+                logger.exception("Failed to write execution log.")
 
-                logger.exception(
-                    "Failed to save execution log."
-                )
-
-            if result["success"]:
-
-                logger.info(
-                    "Execution completed successfully."
-                )
+            if result.success:
+                logger.info("Execution completed successfully.")
 
             else:
+                logger.warning("Execution failed.")
 
-                logger.warning(
-                    "Execution failed."
-                )
-
-                if result["stderr"]:
-                    logger.error(
-                        result["stderr"]
-                    )
+                if result.stderr:
+                    logger.error("Execution failed: %s", result.stderr)
 
             logger.info("=" * 60)
-            logger.info(
-                "Execution Manager Finished"
-            )
+            logger.info("Execution Manager Finished")
             logger.info("=" * 60)
 
     # ==========================================================
-    # PYTHON DETECTION
+    # REGISTER EXECUTOR
     # ==========================================================
 
-    def _contains_python(
-        self,
-        project: Path,
-    ) -> bool:
+    def register_executor(self, name: str, executor: Executor) -> None:
+        """
+        Register a custom executor.
+        """
 
-        if (
-            project / "requirements.txt"
-        ).exists():
-            return True
+        if not hasattr(executor, "run"):
+            raise TypeError("Executor must implement run().")
 
-        if (
-            project / "pyproject.toml"
-        ).exists():
-            return True
+        self.executors[name] = executor
 
-        if (
-            project / "setup.py"
-        ).exists():
-            return True
-
-        return any(
-            project.rglob("*.py")
-        )
+        logger.info("Registered executor: %s", name)
 
     # ==========================================================
-    # DOCKER FALLBACK
+    # AVAILABLE EXECUTORS
     # ==========================================================
 
-    def _detect_non_docker_type(
-        self,
-        project_path: str,
-    ) -> str | None:
+    def available_executors(self) -> list[str]:
+        """
+        Return all registered executors.
+        """
 
-        project = Path(
-            project_path
-        ).resolve()
+        return sorted(self.executors.keys())
 
-        if (
-            project / "package.json"
-        ).exists():
-            return "node"
+    # ==========================================================
+    # HAS EXECUTOR
+    # ==========================================================
 
-        if self._contains_python(
-            project
-        ):
-            return "python"
+    def has_executor(self, name: str) -> bool:
+        """
+        Check whether an executor exists.
+        """
 
-        if any(
-            project.rglob("*.java")
-        ):
-            return "java"
-
-        if (
-            any(project.rglob("*.cpp"))
-            or any(project.rglob("*.cc"))
-            or any(project.rglob("*.cxx"))
-        ):
-            return "cpp"
-
-        return None
+        return name in self.executors
