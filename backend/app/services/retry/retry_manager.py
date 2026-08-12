@@ -5,7 +5,7 @@ import re
 import time
 from typing import Optional
 
-from app.agents.fixer import FixerAgent
+from app.agents.fixer_agent import FixerAgent
 from app.builders.project_builder import ProjectBuilder
 from app.core.logger import logger
 
