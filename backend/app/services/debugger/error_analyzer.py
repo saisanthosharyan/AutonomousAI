@@ -31,6 +31,9 @@ class ErrorAnalyzer:
         "IndentationError": (
             "Python indentation error."
         ),
+        "AssertionError": (
+            "A test assertion failed."
+        ),
 
         "NameError": (
             "Python variable or function is undefined."
@@ -181,6 +184,11 @@ class ErrorAnalyzer:
         "IndentationError": (
             "Fix indentation and ensure consistent "
             "spaces/tabs."
+        ),
+        "AssertionError": (
+            "Inspect the failed test assertion and fix "
+            "the underlying implementation so the expected "
+            "behavior is satisfied."
         ),
 
         "NameError": (

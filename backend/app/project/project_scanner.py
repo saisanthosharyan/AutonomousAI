@@ -1,50 +1,82 @@
 from __future__ import annotations
 
+import os
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+
+
+@dataclass
+class ScannedFile:
+    """
+    Represents one file discovered inside a project.
+    """
+
+    path: str
+    relative_path: str
+    name: str
+    extension: str
+    language: str
+    is_config: bool
 
 
 class ProjectScanner:
     """
-    Scans an existing software project and produces a structured
-    description of its contents.
+    Scans an existing software project and produces
+    structured information about its files.
 
-    Responsibilities
-    ----------------
-    - Traverse project directories
-    - Ignore unnecessary folders/files
-    - Detect programming languages
-    - Detect configuration files
-    - Count files/directories
-    - Produce metadata for downstream analyzers
+    Responsibilities:
+        - Traverse project directories
+        - Ignore unnecessary directories
+        - Ignore unnecessary files
+        - Detect programming languages
+        - Detect configuration files
+        - Return ScannedFile objects
     """
 
-    # ---------------------------------------------------------
-    # Directories ignored during traversal
-    # ---------------------------------------------------------
+    # ======================================================
+    # DIRECTORIES TO IGNORE
+    # ======================================================
 
     IGNORED_DIRECTORIES = {
+        # Git / IDE
         ".git",
         ".github",
         ".idea",
         ".vscode",
+
+        # Python
         ".venv",
         "venv",
+        "env",
         "__pycache__",
+        ".pytest_cache",
+        ".mypy_cache",
+
+        # Node / frontend
         "node_modules",
         "dist",
         "build",
-        ".pytest_cache",
-        ".mypy_cache",
         ".next",
         "coverage",
+
+        # Other build directories
         "out",
         "target",
+
+        # AutoDev generated data
+        ".autodev",
+        ".autodev_debug",
+
+        # Execution / temporary data
+        "execution",
+        "logs",
+        "tmp",
+        "temp",
     }
 
-    # ---------------------------------------------------------
-    # File extensions ignored
-    # ---------------------------------------------------------
+    # ======================================================
+    # FILE EXTENSIONS TO IGNORE
+    # ======================================================
 
     IGNORED_EXTENSIONS = {
         ".pyc",
@@ -52,11 +84,13 @@ class ProjectScanner:
         ".log",
         ".tmp",
         ".cache",
+        ".bak",
+        ".swp",
     }
 
-    # ---------------------------------------------------------
-    # Configuration files
-    # ---------------------------------------------------------
+    # ======================================================
+    # CONFIGURATION FILES
+    # ======================================================
 
     CONFIG_FILES = {
         "requirements.txt",
@@ -65,65 +99,83 @@ class ProjectScanner:
         "yarn.lock",
         "pnpm-lock.yaml",
         "pyproject.toml",
+        "poetry.lock",
+
         "Dockerfile",
         "docker-compose.yml",
         "docker-compose.yaml",
+
         "Cargo.toml",
+        "Cargo.lock",
+
         "go.mod",
+        "go.sum",
+
         "pom.xml",
+
         "composer.json",
+
         ".env",
         ".env.example",
+
         "README.md",
         "README.txt",
         "README",
     }
 
-    # ---------------------------------------------------------
-    # Extension → Language map
-    # ---------------------------------------------------------
+    # ======================================================
+    # LANGUAGE MAP
+    # ======================================================
 
     LANGUAGE_MAP = {
         ".py": "Python",
+
         ".js": "JavaScript",
         ".jsx": "React",
+
         ".ts": "TypeScript",
         ".tsx": "React TypeScript",
+
         ".java": "Java",
         ".kt": "Kotlin",
+
         ".cpp": "C++",
         ".cc": "C++",
         ".cxx": "C++",
+
         ".c": "C",
+
         ".cs": "C#",
+
         ".go": "Go",
+
         ".rs": "Rust",
+
         ".php": "PHP",
+
         ".swift": "Swift",
+
         ".rb": "Ruby",
+
         ".html": "HTML",
+
         ".css": "CSS",
         ".scss": "SCSS",
+
         ".sql": "SQL",
+
         ".sh": "Shell",
         ".ps1": "PowerShell",
     }
 
-    # =========================================================
-    # PUBLIC
-    # =========================================================
+    # ======================================================
+    # PUBLIC SCAN METHOD
+    # ======================================================
 
     def scan(
         self,
         project_path: str | Path,
-    ) -> dict[str, Any]:
-        """
-        Scan an entire software project.
-
-        Returns
-        -------
-        Dictionary containing project metadata.
-        """
+    ) -> list[ScannedFile]:
 
         root = Path(project_path).resolve()
 
@@ -133,82 +185,52 @@ class ProjectScanner:
         if not root.is_dir():
             raise NotADirectoryError(root)
 
-        files: list[str] = []
-        directories: list[str] = []
-        config_files: list[str] = []
+        results: list[ScannedFile] = []
 
-        languages: set[str] = set()
+        for current_root, dirnames, filenames in os.walk(root):
 
-        total_files = 0
-        total_directories = 0
+            # Remove ignored directories in-place.
+            dirnames[:] = [
+                directory
+                for directory in dirnames
+                if not self._ignore_directory(directory)
+            ]
 
-        for current_root, dirnames, filenames in self._walk(root):
-
-            relative_dir = current_root.relative_to(root)
-
-            directories.append(str(relative_dir))
-
-            total_directories += 1
+            current_path = Path(current_root)
 
             for filename in filenames:
 
-                file_path = current_root / filename
+                file_path = current_path / filename
 
                 if self._ignore_file(file_path):
                     continue
 
-                total_files += 1
-
-                relative = str(file_path.relative_to(root))
-
-                files.append(relative)
+                relative_path = file_path.relative_to(root)
 
                 language = self._detect_language(file_path)
 
-                if language:
-                    languages.add(language)
+                is_config = self._is_config_file(file_path)
 
-                if self._is_config_file(file_path):
-                    config_files.append(relative)
+                results.append(
+                    ScannedFile(
+                        path=str(file_path),
+                        relative_path=str(relative_path),
+                        name=file_path.name,
+                        extension=file_path.suffix.lower(),
+                        language=language or "unknown",
+                        is_config=is_config,
+                    )
+                )
 
-        return {
-            "project_name": root.name,
-            "root_path": str(root),
-            "total_files": total_files,
-            "total_directories": total_directories,
-            "languages": sorted(languages),
-            "config_files": sorted(config_files),
-            "source_files": sorted(files),
-            "directories": sorted(directories),
-        }
+        results.sort(
+            key=lambda item: item.relative_path.lower()
+        )
 
-    # =========================================================
-    # WALK
-    # =========================================================
+        return results
 
-    def _walk(
-        self,
-        root: Path,
-    ):
-        """
-        Recursive directory traversal with ignored folders removed.
-        """
-
-        import os
-
-        for current_root, dirnames, filenames in os.walk(root):
-
-            dirnames[:] = [
-                d
-                for d in dirnames
-                if not self._ignore_directory(d)
-            ]
-
-            yield Path(current_root), dirnames, filenames
-
-    # =========================================================
-    # HELPERS
-    # =========================================================
+    # ======================================================
+    # IGNORE DIRECTORY
+    # ======================================================
 
     def _ignore_directory(
         self,
@@ -217,12 +239,28 @@ class ProjectScanner:
 
         return name in self.IGNORED_DIRECTORIES
 
+    # ======================================================
+    # IGNORE FILE
+    # ======================================================
+
     def _ignore_file(
         self,
         path: Path,
     ) -> bool:
 
-        return path.suffix.lower() in self.IGNORED_EXTENSIONS
+        # Ignore known extensions.
+        if path.suffix.lower() in self.IGNORED_EXTENSIONS:
+            return True
+
+        # Ignore common generated files.
+        if path.name.startswith("~"):
+            return True
+
+        return False
+
+    # ======================================================
+    # CONFIG FILE
+    # ======================================================
 
     def _is_config_file(
         self,
@@ -230,6 +268,10 @@ class ProjectScanner:
     ) -> bool:
 
         return path.name in self.CONFIG_FILES
+
+    # ======================================================
+    # LANGUAGE DETECTION
+    # ======================================================
 
     def _detect_language(
         self,

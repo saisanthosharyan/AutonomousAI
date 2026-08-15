@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import re
 from datetime import datetime
@@ -15,36 +16,40 @@ from app.project.project_context import ProjectContext
 
 class FixerAgent(BaseAgent):
     """
-    Repairs an existing generated software project.
+    Autonomous software repair agent.
 
-    IMPORTANT:
-    The Fixer works only with USER SOURCE PROJECT files.
+    The Fixer receives an existing source project, analyzes the
+    failure information, asks an LLM to repair the project, and
+    returns the complete repaired SOURCE project.
 
-    Runtime/debug artifacts such as:
-        execution/
-        history/
-        .autodev_debug/
-        __pycache__/
-        .pytest_cache/
-        build/
-        dist/
-        .venv/
+    Runtime/debug artifacts are never considered source files.
 
-    are diagnostic/runtime data and must NEVER be treated as source
-    files or returned as part of the repaired project.
+    Important protection:
 
-    Expected output:
+    If the LLM accidentally removes a Python import while the
+    imported symbol is still used, the Fixer automatically
+    restores that import before returning the repaired project.
 
-        FILE: app.py
+    Example:
 
-        def add(a, b):
-            return a + b
+        Original:
 
-        FILE: requirements.txt
+            from app import add
 
-        pytest
+            def test_add():
+                assert add(2, 3) == 5
 
-    The Fixer always returns the complete SOURCE project.
+        Bad LLM response:
+
+            def test_add():
+                assert add(2, 3) == 5
+
+        Fixer automatically restores:
+
+            from app import add
+
+            def test_add():
+                assert add(2, 3) == 5
     """
 
     MIN_RESPONSE_LENGTH = 50
@@ -55,7 +60,7 @@ class FixerAgent(BaseAgent):
     MIN_ORIGINAL_SIZE_TO_CHECK = 200
 
     # ==========================================================
-    # FILES THAT MUST NEVER BE GENERATED/RETURNED
+    # FORBIDDEN FILES
     # ==========================================================
 
     FORBIDDEN_PATH_PATTERNS = (
@@ -93,7 +98,7 @@ class FixerAgent(BaseAgent):
     )
 
     # ==========================================================
-    # IMPORTANT SOURCE FILES
+    # CRITICAL FILES
     # ==========================================================
 
     CRITICAL_FILE_NAMES = (
@@ -105,11 +110,24 @@ class FixerAgent(BaseAgent):
         "Cargo.toml",
     )
 
+    # ==========================================================
+    # ENTRY POINTS
+    # ==========================================================
+
     ENTRY_POINTS_BY_PROJECT_TYPE = {
-        "python": ("main.py",),
-        "fastapi": ("app.py", "main.py"),
-        "node": ("package.json",),
-        "express": ("package.json",),
+        "python": (
+            "main.py",
+        ),
+        "fastapi": (
+            "app.py",
+            "main.py",
+        ),
+        "node": (
+            "package.json",
+        ),
+        "express": (
+            "package.json",
+        ),
         "react": (
             "package.json",
             "src/App.jsx",
@@ -179,7 +197,7 @@ class FixerAgent(BaseAgent):
     )
 
     # ==========================================================
-    # FILE BLOCK
+    # FILE BLOCKS
     # ==========================================================
 
     FILE_PATTERN = re.compile(
@@ -278,8 +296,7 @@ class FixerAgent(BaseAgent):
         path: str,
     ) -> bool:
         """
-        Return True if a path is generated/runtime/debug data
-        rather than user source code.
+        Determine whether a path belongs to runtime/debug data.
         """
 
         normalized = (
@@ -308,12 +325,11 @@ class FixerAgent(BaseAgent):
         response: str,
     ) -> str:
         """
-        Normalize LLM response into clean FILE blocks.
+        Normalize LLM response into FILE blocks.
         """
 
         response = response.strip()
 
-        # Remove markdown fences.
         response = self.CODE_FENCE_LINE.sub(
             "",
             response,
@@ -343,7 +359,7 @@ class FixerAgent(BaseAgent):
         return response.strip()
 
     # ==========================================================
-    # REMOVE LANGUAGE LABELS
+    # LANGUAGE LABEL REMOVAL
     # ==========================================================
 
     def _remove_language_labels(
@@ -351,7 +367,7 @@ class FixerAgent(BaseAgent):
         response: str,
     ) -> str:
         """
-        Remove accidental language labels.
+        Remove accidental language labels after FILE lines.
         """
 
         return self.LANGUAGE_PATTERN.sub(
@@ -368,17 +384,7 @@ class FixerAgent(BaseAgent):
         response: str,
     ) -> List[Tuple[str, str]]:
         """
-        Extract:
-
-            FILE: app.py
-
-            content
-
-        into:
-
-            [
-                ("app.py", "content")
-            ]
+        Extract FILE blocks from LLM response.
         """
 
         matches = list(
@@ -419,6 +425,28 @@ class FixerAgent(BaseAgent):
         return files
 
     # ==========================================================
+    # BUILD FILE BLOCK RESPONSE
+    # ==========================================================
+
+    @staticmethod
+    def _build_file_blocks(
+        files: List[Tuple[str, str]],
+    ) -> str:
+        """
+        Convert file tuples back into FILE blocks.
+        """
+
+        blocks = []
+
+        for path, content in files:
+
+            blocks.append(
+                f"FILE: {path}\n\n{content.strip()}"
+            )
+
+        return "\n\n".join(blocks)
+
+    # ==========================================================
     # FILTER SOURCE PROJECT
     # ==========================================================
 
@@ -427,10 +455,8 @@ class FixerAgent(BaseAgent):
         code: str,
     ) -> str:
         """
-        Remove runtime/debug artifacts from the project before
-        sending the project to the LLM.
-
-        This is one of the most important protections in the Fixer.
+        Remove runtime/debug artifacts before sending the project
+        to the LLM.
         """
 
         try:
@@ -471,7 +497,6 @@ class FixerAgent(BaseAgent):
             )
 
         if not source_blocks:
-
             return ""
 
         return "\n\n".join(
@@ -533,14 +558,13 @@ class FixerAgent(BaseAgent):
                 "Generated file path is empty."
             )
 
-        # NEVER allow runtime artifacts.
         if self._is_runtime_artifact_path(
             path
         ):
 
             raise RuntimeError(
-                "Runtime/generated artifact "
-                f"cannot be returned by Fixer Agent: {path}"
+                "Runtime/generated artifact cannot be "
+                f"returned by Fixer Agent: {path}"
             )
 
         if len(path) > self.MAX_FILE_PATH_LENGTH:
@@ -607,7 +631,7 @@ class FixerAgent(BaseAgent):
         content: str,
     ) -> None:
         """
-        Reject incomplete placeholder files.
+        Reject incomplete source files.
         """
 
         for pattern in self.PLACEHOLDER_PATTERNS:
@@ -616,8 +640,8 @@ class FixerAgent(BaseAgent):
 
                 raise RuntimeError(
                     f"Generated file '{path}' contains "
-                    "placeholder content instead of a "
-                    f"real implementation "
+                    "placeholder content instead of a real "
+                    f"implementation "
                     f"(matched: {pattern.pattern!r})."
                 )
 
@@ -632,8 +656,8 @@ class FixerAgent(BaseAgent):
         original_files: Dict[str, str],
     ) -> None:
         """
-        Prevent accidental replacement of a large file with
-        a tiny response.
+        Prevent accidental replacement of large source files
+        with tiny responses.
         """
 
         original = original_files.get(
@@ -647,10 +671,7 @@ class FixerAgent(BaseAgent):
             original.strip()
         )
 
-        if (
-            original_len
-            < self.MIN_ORIGINAL_SIZE_TO_CHECK
-        ):
+        if original_len < self.MIN_ORIGINAL_SIZE_TO_CHECK:
             return
 
         new_len = len(
@@ -678,8 +699,7 @@ class FixerAgent(BaseAgent):
         original_files: Dict[str, str],
     ) -> None:
         """
-        Ensure important dependency/configuration files
-        are not accidentally removed.
+        Ensure dependency/configuration files remain.
         """
 
         for name in self.CRITICAL_FILE_NAMES:
@@ -743,6 +763,483 @@ class FixerAgent(BaseAgent):
                 )
 
     # ==========================================================
+    # PYTHON IMPORT ANALYSIS
+    # ==========================================================
+
+    @staticmethod
+    def _get_python_import_lines(
+        source: str,
+    ) -> List[str]:
+        """
+        Return original Python import statements.
+
+        AST is used to identify import statements while the
+        original source lines are preserved exactly.
+        """
+
+        try:
+
+            tree = ast.parse(
+                source
+            )
+
+        except SyntaxError:
+
+            return []
+
+        lines = source.splitlines()
+
+        imports: List[str] = []
+
+        for node in ast.walk(tree):
+
+            if isinstance(
+                node,
+                (
+                    ast.Import,
+                    ast.ImportFrom,
+                ),
+            ):
+
+                start = node.lineno - 1
+
+                end = getattr(
+                    node,
+                    "end_lineno",
+                    node.lineno,
+                )
+
+                statement = "\n".join(
+                    lines[start:end]
+                ).strip()
+
+                if statement:
+                    imports.append(
+                        statement
+                    )
+
+        return imports
+
+    # ==========================================================
+    # PYTHON IMPORTED SYMBOLS
+    # ==========================================================
+
+    @staticmethod
+    def _get_imported_names(
+        source: str,
+    ) -> Dict[str, str]:
+        """
+        Map imported Python names to their original import
+        statements.
+
+        Example:
+
+            from app import add
+
+        becomes:
+
+            {
+                "add": "from app import add"
+            }
+        """
+
+        try:
+
+            tree = ast.parse(
+                source
+            )
+
+        except SyntaxError:
+
+            return {}
+
+        lines = source.splitlines()
+
+        result: Dict[str, str] = {}
+
+        for node in ast.walk(tree):
+
+            if isinstance(
+                node,
+                (
+                    ast.Import,
+                    ast.ImportFrom,
+                ),
+            ):
+
+                start = node.lineno - 1
+
+                end = getattr(
+                    node,
+                    "end_lineno",
+                    node.lineno,
+                )
+
+                statement = "\n".join(
+                    lines[start:end]
+                ).strip()
+
+                if not statement:
+                    continue
+
+                if isinstance(
+                    node,
+                    ast.Import,
+                ):
+
+                    for alias in node.names:
+
+                        bound_name = (
+                            alias.asname
+                            or alias.name.split(".")[0]
+                        )
+
+                        result[
+                            bound_name
+                        ] = statement
+
+                elif isinstance(
+                    node,
+                    ast.ImportFrom,
+                ):
+
+                    for alias in node.names:
+
+                        if alias.name == "*":
+                            continue
+
+                        bound_name = (
+                            alias.asname
+                            or alias.name
+                        )
+
+                        result[
+                            bound_name
+                        ] = statement
+
+        return result
+
+    # ==========================================================
+    # PYTHON USED NAMES
+    # ==========================================================
+
+    @staticmethod
+    def _get_python_used_names(
+        source: str,
+    ) -> set:
+        """
+        Return names referenced by a Python source file.
+        """
+
+        try:
+
+            tree = ast.parse(
+                source
+            )
+
+        except SyntaxError:
+
+            return set()
+
+        used = set()
+
+        for node in ast.walk(tree):
+
+            if isinstance(
+                node,
+                ast.Name,
+            ):
+
+                if isinstance(
+                    node.ctx,
+                    ast.Load,
+                ):
+
+                    used.add(
+                        node.id
+                    )
+
+        return used
+
+    # ==========================================================
+    # CHECK MISSING PYTHON IMPORTS
+    # ==========================================================
+
+    def _find_missing_python_imports(
+        self,
+        original: str,
+        repaired: str,
+    ) -> List[str]:
+        """
+        Find imports that disappeared from the repaired file
+        while the imported symbol is still used.
+
+        This specifically prevents the failure seen in:
+
+            from app import add
+
+            def test_add():
+                assert add(2, 3) == 5
+
+        becoming:
+
+            def test_add():
+                assert add(2, 3) == 5
+        """
+
+        original_imports = (
+            self._get_imported_names(
+                original
+            )
+        )
+
+        if not original_imports:
+            return []
+
+        used_names = (
+            self._get_python_used_names(
+                repaired
+            )
+        )
+
+        try:
+
+            repaired_tree = ast.parse(
+                repaired
+            )
+
+        except SyntaxError:
+
+            # Syntax validation will report this separately.
+            return []
+
+        repaired_import_names = set()
+
+        for node in ast.walk(
+            repaired_tree
+        ):
+
+            if isinstance(
+                node,
+                ast.Import,
+            ):
+
+                for alias in node.names:
+
+                    repaired_import_names.add(
+                        alias.asname
+                        or alias.name.split(".")[0]
+                    )
+
+            elif isinstance(
+                node,
+                ast.ImportFrom,
+            ):
+
+                for alias in node.names:
+
+                    if alias.name != "*":
+
+                        repaired_import_names.add(
+                            alias.asname
+                            or alias.name
+                        )
+
+        missing = []
+
+        for name, statement in (
+            original_imports.items()
+        ):
+
+            if (
+                name in used_names
+                and name not in repaired_import_names
+            ):
+
+                missing.append(
+                    statement
+                )
+
+        return list(
+            dict.fromkeys(
+                missing
+            )
+        )
+
+    # ==========================================================
+    # RESTORE MISSING PYTHON IMPORTS
+    # ==========================================================
+
+    def _restore_missing_python_imports(
+        self,
+        original: str,
+        repaired: str,
+        path: str,
+    ) -> str:
+        """
+        Restore Python imports that were accidentally removed
+        while their symbols are still being used.
+
+        Only Python files are processed.
+        """
+
+        if not path.lower().endswith(".py"):
+            return repaired
+
+        missing_imports = (
+            self._find_missing_python_imports(
+                original,
+                repaired,
+            )
+        )
+
+        if not missing_imports:
+            return repaired
+
+        logger.warning(
+            "Restoring %d missing Python import(s) "
+            "in repaired file: %s",
+            len(missing_imports),
+            path,
+        )
+
+        for statement in reversed(
+            missing_imports
+        ):
+
+            repaired = (
+                statement
+                + "\n\n"
+                + repaired.lstrip()
+            )
+
+        return repaired
+
+    # ==========================================================
+    # PYTHON SYNTAX VALIDATION
+    # ==========================================================
+
+    def _validate_python_syntax(
+        self,
+        path: str,
+        content: str,
+    ) -> None:
+        """
+        Validate Python syntax before accepting the repair.
+        """
+
+        if not path.lower().endswith(".py"):
+            return
+
+        try:
+
+            ast.parse(
+                content,
+                filename=path,
+            )
+
+        except SyntaxError as exc:
+
+            raise RuntimeError(
+                f"Generated Python file '{path}' "
+                f"contains invalid syntax: {exc}"
+            ) from exc
+
+    # ==========================================================
+    # IMPORT PRESERVATION
+    # ==========================================================
+
+    def _protect_python_imports(
+        self,
+        file_blocks: List[Tuple[str, str]],
+        original_files: Dict[str, str],
+    ) -> List[Tuple[str, str]]:
+        """
+        Protect important Python imports before final validation.
+        """
+
+        repaired_files = []
+
+        for path, content in file_blocks:
+
+            normalized = (
+                self._normalize_path_key(
+                    path
+                )
+            )
+
+            original = original_files.get(
+                normalized
+            )
+
+            if original is not None:
+
+                content = (
+                    self._restore_missing_python_imports(
+                        original,
+                        content,
+                        path,
+                    )
+                )
+
+            repaired_files.append(
+                (
+                    path,
+                    content,
+                )
+            )
+
+        return repaired_files
+
+    # ==========================================================
+    # TEST FILE PROTECTION
+    # ==========================================================
+
+    def _check_test_imports_preserved(
+        self,
+        path: str,
+        original: str,
+        repaired: str,
+    ) -> None:
+        """
+        Strong protection for test files.
+
+        If a test still uses an imported symbol, its import must
+        remain available after repair.
+        """
+
+        normalized = (
+            self._normalize_path_key(
+                path
+            )
+        )
+
+        is_test = (
+            normalized.startswith("test")
+            or "/test" in normalized
+            or normalized.startswith("tests/")
+            or "/tests/" in normalized
+            or Path(path).name.startswith("test_")
+        )
+
+        if not is_test:
+            return
+
+        missing = (
+            self._find_missing_python_imports(
+                original,
+                repaired,
+            )
+        )
+
+        if missing:
+
+            raise RuntimeError(
+                f"Test file '{path}' lost required "
+                f"imports: {missing}"
+            )
+
+    # ==========================================================
     # PROMPT
     # ==========================================================
 
@@ -781,13 +1278,67 @@ You are AutoDev AI's autonomous software repair engineer.
 Your job is to repair the USER'S SOURCE PROJECT.
 
 ==========================================================
-CRITICAL RULE
+CRITICAL RULE — PRESERVE SOURCE CODE
 ==========================================================
 
-There is an important difference between SOURCE FILES and
-RUNTIME/DEBUG ARTIFACTS.
+The project below is the source of truth.
 
-SOURCE FILES are files such as:
+You must return the COMPLETE repaired source project.
+
+Do NOT unnecessarily delete existing code.
+
+Do NOT rewrite working code without a reason.
+
+Do NOT remove imports that are still required.
+
+Do NOT remove test imports.
+
+If a function/class/module is still used, preserve the required
+imports and dependencies.
+
+==========================================================
+IMPORT PRESERVATION RULE
+==========================================================
+
+This rule is extremely important.
+
+Before modifying a source file:
+
+1. Inspect its existing imports.
+2. Determine which imported names are used.
+3. Preserve all imports that remain necessary.
+4. Do not remove an import merely because the import statement
+   looks unnecessary.
+5. Tests are especially important.
+
+Example:
+
+Original:
+
+from app import add
+
+def test_add():
+    assert add(2, 3) == 5
+
+Correct repair:
+
+from app import add
+
+def test_add():
+    assert add(2, 3) == 5
+
+INCORRECT repair:
+
+def test_add():
+    assert add(2, 3) == 5
+
+The second version is invalid because 'add' is undefined.
+
+==========================================================
+SOURCE FILES VS RUNTIME ARTIFACTS
+==========================================================
+
+SOURCE FILES include:
 
 - Python files
 - JavaScript files
@@ -800,7 +1351,7 @@ SOURCE FILES are files such as:
 - test files
 - README files
 
-RUNTIME/DEBUG ARTIFACTS are diagnostic files such as:
+RUNTIME/DEBUG ARTIFACTS include:
 
 - execution/
 - history/
@@ -815,13 +1366,11 @@ RUNTIME/DEBUG ARTIFACTS are diagnostic files such as:
 - .venv/
 - venv/
 
-Runtime/debug artifacts are ONLY evidence about what went wrong.
+Runtime/debug artifacts are ONLY diagnostic evidence.
 
 They are NOT source files.
 
 NEVER return runtime/debug artifacts.
-
-NEVER recreate runtime/debug artifacts.
 
 ==========================================================
 CURRENT SOURCE PROJECT
@@ -857,11 +1406,11 @@ TEST RESULTS
 EXECUTION / DEBUG REPORT
 ==========================================================
 
-The execution/debug information below is diagnostic evidence.
+The following is diagnostic evidence.
 
 It is NOT source code.
 
-Do NOT convert the execution/debug information into FILE blocks.
+Do NOT convert this information into FILE blocks.
 
 {execution}
 
@@ -885,7 +1434,7 @@ OBJECTIVE
 
 Repair ONLY real problems.
 
-Preserve working functionality.
+Preserve all working functionality.
 
 Fix:
 
@@ -944,8 +1493,10 @@ pytest
 
 FILE: tests/test_app.py
 
-def test_example():
-    assert True
+from app import add
+
+def test_add():
+    assert add(2, 3) == 5
 
 ==========================================================
 ABSOLUTE OUTPUT RULES
@@ -1014,8 +1565,8 @@ Return ONLY FILE blocks.
         """
         Save Fixer debugging information.
 
-        These files are for AutoDev debugging only and are NOT
-        part of the generated source project.
+        These files are diagnostic only and are never part of
+        the generated source project.
         """
 
         if not project_directory:
@@ -1102,7 +1653,18 @@ Return ONLY FILE blocks.
             )
 
         # ------------------------------------------------------
-        # IMPORTANT:
+        # Preserve original source BEFORE filtering.
+        # ------------------------------------------------------
+
+        original_source_code = code
+
+        original_files = (
+            self._extract_original_files(
+                original_source_code
+            )
+        )
+
+        # ------------------------------------------------------
         # Remove runtime/debug artifacts BEFORE sending the
         # project to the LLM.
         # ------------------------------------------------------
@@ -1315,7 +1877,44 @@ Return ONLY FILE blocks.
             )
 
         # ------------------------------------------------------
-        # Reject identical response
+        # Extract generated files BEFORE validation.
+        # ------------------------------------------------------
+
+        file_blocks = (
+            self._extract_file_blocks(
+                response
+            )
+        )
+
+        if not file_blocks:
+
+            raise RuntimeError(
+                "Fixer did not return any FILE blocks."
+            )
+
+        # ------------------------------------------------------
+        # Protect Python imports.
+        #
+        # This is the important fix for your current failure.
+        # ------------------------------------------------------
+
+        file_blocks = (
+            self._protect_python_imports(
+                file_blocks,
+                original_files,
+            )
+        )
+
+        # ------------------------------------------------------
+        # Rebuild response after import protection.
+        # ------------------------------------------------------
+
+        response = self._build_file_blocks(
+            file_blocks
+        )
+
+        # ------------------------------------------------------
+        # Reject identical response.
         # ------------------------------------------------------
 
         if response.strip() == code.strip():
@@ -1326,17 +1925,7 @@ Return ONLY FILE blocks.
             )
 
         # ------------------------------------------------------
-        # Extract original source files
-        # ------------------------------------------------------
-
-        original_files = (
-            self._extract_original_files(
-                code
-            )
-        )
-
-        # ------------------------------------------------------
-        # Validate repaired project
+        # Validate repaired project.
         # ------------------------------------------------------
 
         self._validate_response(
@@ -1354,7 +1943,7 @@ Return ONLY FILE blocks.
         logger.info("=" * 60)
 
         # ------------------------------------------------------
-        # Save successful repair to memory
+        # Save successful repair to memory.
         # ------------------------------------------------------
 
         try:
@@ -1491,7 +2080,16 @@ Return ONLY FILE blocks.
             )
 
             # --------------------------------------------------
-            # Size validation
+            # Python syntax validation
+            # --------------------------------------------------
+
+            self._validate_python_syntax(
+                path,
+                content,
+            )
+
+            # --------------------------------------------------
+            # Suspicious shrinkage
             # --------------------------------------------------
 
             self._check_suspicious_shrinkage(
@@ -1499,6 +2097,22 @@ Return ONLY FILE blocks.
                 content,
                 original_files,
             )
+
+            # --------------------------------------------------
+            # Test import protection
+            # --------------------------------------------------
+
+            original = original_files.get(
+                normalized
+            )
+
+            if original is not None:
+
+                self._check_test_imports_preserved(
+                    path,
+                    original,
+                    content,
+                )
 
             logger.debug(
                 "Validated repaired file: %s",

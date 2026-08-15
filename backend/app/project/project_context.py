@@ -6,11 +6,27 @@ from typing import Any
 
 from app.core.logger import logger
 
-from app.project.project_scanner import ProjectScanner
-from app.project.project_analyzer import ProjectAnalyzer
-from app.project.dependency_analyzer import DependencyAnalyzer
-from app.project.tree_builder import TreeBuilder
-from app.project.code_indexer import CodeIndexer, FileIndex
+from app.project.project_scanner import (
+    ProjectScanner,
+    ScannedFile,
+)
+
+from app.project.project_analyzer import (
+    ProjectAnalyzer,
+)
+
+from app.project.dependency_analyzer import (
+    DependencyAnalyzer,
+)
+
+from app.project.tree_builder import (
+    TreeBuilder,
+)
+
+from app.project.code_indexer import (
+    CodeIndexer,
+    FileIndex,
+)
 
 
 # ==========================================================
@@ -21,7 +37,7 @@ from app.project.code_indexer import CodeIndexer, FileIndex
 @dataclass
 class ProjectSummary:
     """
-    High-level summary of the project.
+    High-level project summary.
     """
 
     root: str
@@ -32,24 +48,30 @@ class ProjectSummary:
 
     total_directories: int = 0
 
-    languages: dict[str, int] = field(default_factory=dict)
+    languages: dict[str, int] = field(
+        default_factory=dict
+    )
 
-    frameworks: list[str] = field(default_factory=list)
+    frameworks: list[str] = field(
+        default_factory=list
+    )
 
-    dependencies: list[str] = field(default_factory=list)
+    dependencies: list[str] = field(
+        default_factory=list
+    )
 
 
 @dataclass
 class ProjectContextData:
     """
-    Complete project context shared across all agents.
+    Complete project context shared by AI agents.
     """
 
     summary: ProjectSummary
 
     tree: str
 
-    scanned_files: list[Any]
+    scanned_files: list[ScannedFile]
 
     dependencies: dict[str, Any]
 
@@ -65,13 +87,7 @@ class ProjectContextData:
 
 class ContextBuilder:
     """
-    Formats a ProjectContextData into a compact string suitable
-    for injection into LLM prompts.
-
-    Kept separate from ProjectContext so the prompt-formatting
-    logic can evolve (architecture summary, entry points,
-    README summary, detected APIs/DBs/tests, etc.) without
-    touching the data-access layer.
+    Converts ProjectContextData into compact LLM context.
     """
 
     def build(
@@ -89,6 +105,10 @@ class ContextBuilder:
         )
 
         sections.append(
+            f"Root: {summary.root}"
+        )
+
+        sections.append(
             f"Files: {summary.total_files}"
         )
 
@@ -98,39 +118,87 @@ class ContextBuilder:
 
         if summary.languages:
 
+            language_text = ", ".join(
+                f"{name} ({count})"
+                for name, count
+                in summary.languages.items()
+            )
+
             sections.append(
-                "Languages: "
-                + ", ".join(
-                    f"{k} ({v})"
-                    for k, v in summary.languages.items()
-                )
+                f"Languages: {language_text}"
             )
 
         if summary.frameworks:
 
             sections.append(
                 "Frameworks: "
-                + ", ".join(summary.frameworks)
+                + ", ".join(
+                    summary.frameworks
+                )
             )
 
         if summary.dependencies:
 
             sections.append(
                 "Dependencies: "
-                + ", ".join(summary.dependencies)
+                + ", ".join(
+                    summary.dependencies
+                )
             )
-
-        # TODO: add architecture summary, entry points (main.py),
-        # package manager, README summary, detected APIs,
-        # detected database, detected tests, etc.
 
         sections.append("")
 
-        sections.append("Directory Tree")
+        sections.append(
+            "Directory Tree"
+        )
 
-        sections.append(context.tree)
+        sections.append(
+            context.tree
+        )
 
-        text = "\n".join(sections)
+        # --------------------------------------------------
+        # Indexed source files
+        # --------------------------------------------------
+
+        sections.append("")
+
+        sections.append(
+            "Indexed Source Files"
+        )
+
+        for path, file_index in (
+            context.code_index.items()
+        ):
+
+            sections.append(
+                f"- {path}"
+            )
+
+            if file_index.classes:
+
+                sections.append(
+                    "  Classes: "
+                    + ", ".join(
+                        cls.name
+                        for cls
+                        in file_index.classes
+                    )
+                )
+
+            if file_index.functions:
+
+                sections.append(
+                    "  Functions: "
+                    + ", ".join(
+                        function.name
+                        for function
+                        in file_index.functions
+                    )
+                )
+
+        text = "\n".join(
+            sections
+        )
 
         if len(text) > max_chars:
 
@@ -148,26 +216,8 @@ class ProjectContext:
     """
     Central project knowledge provider.
 
-    This class combines information from every project-analysis
-    subsystem and exposes one unified API.
-
-    Components
-    ----------
-
-    • ProjectScanner
-
-    • TreeBuilder
-
-    • DependencyAnalyzer
-
-    • ProjectAnalyzer
-
-    • CodeIndexer
-
-    • ContextBuilder
-
-    Every AI agent should obtain project knowledge through this
-    class instead of using individual analyzers directly.
+    All AI agents should use this class instead of
+    directly interacting with individual analyzers.
     """
 
     def __init__(self):
@@ -176,21 +226,31 @@ class ProjectContext:
 
         self.tree_builder = TreeBuilder()
 
-        self.dependency_analyzer = DependencyAnalyzer()
+        self.dependency_analyzer = (
+            DependencyAnalyzer()
+        )
 
-        self.project_analyzer = ProjectAnalyzer()
+        self.project_analyzer = (
+            ProjectAnalyzer()
+        )
 
         self.code_indexer = CodeIndexer()
 
-        self.context_builder = ContextBuilder()
+        self.context_builder = (
+            ContextBuilder()
+        )
 
-        self.context: ProjectContextData | None = None
+        self.context: (
+            ProjectContextData | None
+        ) = None
 
-        # filename -> file object, for O(1) exact-name lookups
-        self._file_by_name: dict[str, Any] = {}
+        self._file_by_name: dict[
+            str,
+            list[ScannedFile],
+        ] = {}
 
     # ======================================================
-    # BUILD CONTEXT
+    # BUILD
     # ======================================================
 
     def build(
@@ -198,88 +258,134 @@ class ProjectContext:
         project_directory: str | Path,
     ) -> ProjectContextData:
 
-        root = Path(project_directory).resolve()
+        root = Path(
+            project_directory
+        ).resolve()
 
         if not root.exists():
-            raise FileNotFoundError(root)
+
+            raise FileNotFoundError(
+                root
+            )
+
+        if not root.is_dir():
+
+            raise NotADirectoryError(
+                root
+            )
 
         logger.info(
             "Building project context..."
         )
 
-        # ------------------------------------------
-        # Scan project
-        # ------------------------------------------
+        # --------------------------------------------------
+        # Scanner
+        # --------------------------------------------------
 
-        scanned_files = self.scanner.scan(root)
+        scanned_files = (
+            self.scanner.scan(root)
+        )
 
-        # ------------------------------------------
-        # Directory tree
-        # ------------------------------------------
+        # --------------------------------------------------
+        # Tree
+        # --------------------------------------------------
 
-        tree = self.tree_builder.build(root)
+        tree = (
+            self.tree_builder.build(root)
+        )
 
-        # ------------------------------------------
-        # Dependency analysis
-        # ------------------------------------------
+        # --------------------------------------------------
+        # Dependencies
+        # --------------------------------------------------
 
-        dependencies = self.dependency_analyzer.analyze(root)
+        dependencies = (
+            self.dependency_analyzer.analyze(
+                root
+            )
+        )
 
-        # ------------------------------------------
+        # --------------------------------------------------
         # Project analysis
-        # ------------------------------------------
+        # --------------------------------------------------
 
-        analysis = self.project_analyzer.analyze(root)
+        analysis = (
+            self.project_analyzer.analyze(
+                root
+            )
+        )
 
-        # ------------------------------------------
-        # Source code index
-        # ------------------------------------------
+        # --------------------------------------------------
+        # Code index
+        # --------------------------------------------------
 
-        code_index = self.code_indexer.build(root)
+        code_index = (
+            self.code_indexer.build(root)
+        )
 
-        # ------------------------------------------
+        # --------------------------------------------------
         # Language statistics
-        # ------------------------------------------
+        # --------------------------------------------------
 
         languages: dict[str, int] = {}
 
         for item in scanned_files:
 
-            language = getattr(
-                item,
-                "language",
-                "unknown",
+            language = (
+                item.language
+                or "unknown"
             )
 
             languages[language] = (
-                languages.get(language, 0) + 1
+                languages.get(language, 0)
+                + 1
             )
 
-        # ------------------------------------------
-        # Filename index (for O(1) find_file lookups)
-        # ------------------------------------------
+        # --------------------------------------------------
+        # Filename index
+        # --------------------------------------------------
 
-        self._file_by_name = {
-            Path(item.path).name.lower(): item
-            for item in scanned_files
-        }
+        self._file_by_name.clear()
 
-        # ------------------------------------------
+        for item in scanned_files:
+
+            filename = (
+                item.name.lower()
+            )
+
+            self._file_by_name.setdefault(
+                filename,
+                []
+            ).append(item)
+
+        # --------------------------------------------------
+        # Directory count
+        # --------------------------------------------------
+
+        total_directories = sum(
+            1
+            for path in root.rglob("*")
+            if path.is_dir()
+            and not any(
+                part in self.scanner.IGNORED_DIRECTORIES
+                for part in path.relative_to(root).parts
+            )
+        )
+
+        # --------------------------------------------------
         # Summary
-        # ------------------------------------------
+        # --------------------------------------------------
 
         summary = ProjectSummary(
-
             root=str(root),
 
             project_name=root.name,
 
-            total_files=len(scanned_files),
+            total_files=len(
+                scanned_files
+            ),
 
-            total_directories=sum(
-                1
-                for path in root.rglob("*")
-                if path.is_dir()
+            total_directories=(
+                total_directories
             ),
 
             languages=languages,
@@ -294,8 +400,11 @@ class ProjectContext:
             ),
         )
 
-        self.context = ProjectContextData(
+        # --------------------------------------------------
+        # Context
+        # --------------------------------------------------
 
+        self.context = ProjectContextData(
             summary=summary,
 
             tree=tree,
@@ -316,18 +425,17 @@ class ProjectContext:
         return self.context
 
     # ======================================================
-    # ACCESSORS
+    # STATE
     # ======================================================
 
     @property
     def ready(self) -> bool:
-        """
-        Whether a project has already been indexed.
-        """
 
         return self.context is not None
 
-    def require_context(self) -> ProjectContextData:
+    def require_context(
+        self,
+    ) -> ProjectContextData:
 
         if self.context is None:
 
@@ -337,114 +445,147 @@ class ProjectContext:
 
         return self.context
 
+    # ======================================================
+    # SUMMARY
+    # ======================================================
+
     def get_summary(
         self,
     ) -> ProjectSummary:
 
-        return self.require_context().summary
+        return (
+            self.require_context()
+            .summary
+        )
+
+    # ======================================================
+    # TREE
+    # ======================================================
 
     def get_tree(
         self,
     ) -> str:
 
-        return self.require_context().tree
+        return (
+            self.require_context()
+            .tree
+        )
+
+    # ======================================================
+    # ANALYSIS
+    # ======================================================
 
     def get_analysis(
         self,
     ) -> dict[str, Any]:
 
-        return dict(self.require_context().analysis)
+        return dict(
+            self.require_context()
+            .analysis
+        )
+
+    # ======================================================
+    # DEPENDENCIES
+    # ======================================================
 
     def get_dependencies(
         self,
     ) -> dict[str, Any]:
 
-        return dict(self.require_context().dependencies)
+        return dict(
+            self.require_context()
+            .dependencies
+        )
+
+    # ======================================================
+    # INDEX
+    # ======================================================
 
     def get_index(
         self,
     ) -> dict[str, FileIndex]:
 
-        return dict(self.require_context().code_index)
+        return dict(
+            self.require_context()
+            .code_index
+        )
 
     # ======================================================
-    # FILE ACCESS
+    # FILES
     # ======================================================
 
-    def get_files(self) -> list[Any]:
-        """
-        Return every scanned file.
-        """
+    def get_files(
+        self,
+    ) -> list[ScannedFile]:
 
-        return list(self.require_context().scanned_files)
+        return list(
+            self.require_context()
+            .scanned_files
+        )
+
+    # ======================================================
+    # FIND FILE
+    # ======================================================
 
     def find_file(
         self,
         name: str,
-    ) -> Any | None:
-        """
-        Find a file by filename (O(1) lookup).
-        """
+    ) -> ScannedFile | None:
 
-        return self._file_by_name.get(name.lower())
+        results = self._file_by_name.get(
+            name.lower(),
+            []
+        )
+
+        if not results:
+
+            return None
+
+        return results[0]
+
+    # ======================================================
+    # FIND FILES
+    # ======================================================
 
     def find_files(
         self,
         keyword: str,
-    ) -> list[Any]:
-        """
-        Find files whose filename contains keyword.
-        """
+    ) -> list[ScannedFile]:
 
         keyword = keyword.lower()
 
-        results = []
-
-        for file in self.get_files():
-
-            path = Path(file.path)
-
-            if keyword in path.name.lower():
-
-                results.append(file)
-
-        return results
+        return [
+            file
+            for file in self.get_files()
+            if keyword in file.name.lower()
+        ]
 
     # ======================================================
-    # LANGUAGE FILTERING
+    # LANGUAGE FILTER
     # ======================================================
 
     def files_by_language(
         self,
         language: str,
-    ) -> list[Any]:
-        """
-        Return files written in one language.
-        """
+    ) -> list[ScannedFile]:
 
         language = language.lower()
 
         return [
-
             file
-
             for file in self.get_files()
-
-            if getattr(
-                file,
-                "language",
-                "",
-            ).lower() == language
-
+            if file.language.lower()
+            == language
         ]
+
+    # ======================================================
+    # EXTENSION FILTER
+    # ======================================================
 
     def files_by_extension(
         self,
         extension: str,
-    ) -> list[Any]:
-        """
-        Return files matching an extension.
-        """
+    ) -> list[ScannedFile]:
 
         extension = extension.lower()
 
@@ -452,107 +593,113 @@ class ProjectContext:
 
             extension = "." + extension
 
-        results = []
-
-        for file in self.get_files():
-
-            if Path(file.path).suffix.lower() == extension:
-
-                results.append(file)
-
-        return results
+        return [
+            file
+            for file in self.get_files()
+            if file.extension == extension
+        ]
 
     # ======================================================
-    # CODE INDEX SEARCH
+    # CODE SEARCH
     # ======================================================
 
     def find_function(
         self,
         name: str,
     ) -> list:
-        """
-        Search indexed functions.
-        """
 
-        return self.code_indexer.find_function(
-            name
+        return (
+            self.code_indexer
+            .find_function(name)
         )
 
     def find_class(
         self,
         name: str,
     ) -> list:
-        """
-        Search indexed classes.
-        """
 
-        return self.code_indexer.find_class(
-            name
+        return (
+            self.code_indexer
+            .find_class(name)
         )
 
     def find_import(
         self,
         module: str,
     ) -> list:
-        """
-        Search indexed imports.
-        """
 
-        return self.code_indexer.find_import(
-            module
+        return (
+            self.code_indexer
+            .find_import(module)
         )
 
     def search_symbols(
         self,
         keyword: str,
-    ) -> list:
-        """
-        Global symbol search.
-        """
+    ) -> dict[str, list]:
 
-        return self.code_indexer.search(
-            keyword
+        return (
+            self.code_indexer
+            .search(keyword)
         )
 
     # ======================================================
-    # PROJECT STATISTICS
+    # STATISTICS
     # ======================================================
 
     def statistics(
         self,
     ) -> dict[str, Any]:
-        """
-        Return project-wide statistics.
-        """
 
-        context = self.require_context()
+        context = (
+            self.require_context()
+        )
 
-        code_stats = self.code_indexer.statistics()
+        code_stats = (
+            self.code_indexer
+            .statistics()
+        )
 
         return {
+            "project": (
+                context.summary.project_name
+            ),
 
-            "project": context.summary.project_name,
+            "files": (
+                context.summary.total_files
+            ),
 
-            "files": context.summary.total_files,
+            "directories": (
+                context.summary.total_directories
+            ),
 
-            "directories": context.summary.total_directories,
+            "languages": (
+                context.summary.languages
+            ),
 
-            "languages": context.summary.languages,
-
-            "frameworks": context.summary.frameworks,
+            "frameworks": (
+                context.summary.frameworks
+            ),
 
             "dependencies": len(
                 context.dependencies
             ),
 
-            "indexed_files": code_stats["files"],
+            "indexed_files": (
+                code_stats["files"]
+            ),
 
-            "classes": code_stats["classes"],
+            "classes": (
+                code_stats["classes"]
+            ),
 
-            "functions": code_stats["functions"],
+            "functions": (
+                code_stats["functions"]
+            ),
 
-            "imports": code_stats["imports"],
-
+            "imports": (
+                code_stats["imports"]
+            ),
         }
 
     # ======================================================
@@ -563,18 +710,12 @@ class ProjectContext:
         self,
         max_chars: int = 12000,
     ) -> str:
-        """
-        Build a compact context string for LLM prompts.
 
-        Delegates formatting to ContextBuilder, which can be
-        extended independently (architecture summary, entry
-        points, README summary, detected APIs/DB/tests, etc.)
-        without changes here.
-        """
-
-        return self.context_builder.build(
-            self.require_context(),
-            max_chars=max_chars,
+        return (
+            self.context_builder.build(
+                self.require_context(),
+                max_chars=max_chars,
+            )
         )
 
     # ======================================================
@@ -584,71 +725,81 @@ class ProjectContext:
     def to_dict(
         self,
     ) -> dict[str, Any]:
-        """
-        Export complete project context.
-        """
 
-        context = self.require_context()
+        context = (
+            self.require_context()
+        )
 
         return {
-
             "summary": {
+                "root": (
+                    context.summary.root
+                ),
 
-                "root": context.summary.root,
+                "project_name": (
+                    context.summary.project_name
+                ),
 
-                "project_name": context.summary.project_name,
+                "total_files": (
+                    context.summary.total_files
+                ),
 
-                "total_files": context.summary.total_files,
+                "total_directories": (
+                    context.summary.total_directories
+                ),
 
-                "total_directories": context.summary.total_directories,
+                "languages": (
+                    context.summary.languages
+                ),
 
-                "languages": context.summary.languages,
+                "frameworks": (
+                    context.summary.frameworks
+                ),
 
-                "frameworks": context.summary.frameworks,
-
-                "dependencies": context.summary.dependencies,
-
+                "dependencies": (
+                    context.summary.dependencies
+                ),
             },
 
-            "analysis": context.analysis,
+            "analysis": (
+                context.analysis
+            ),
 
-            "dependencies": context.dependencies,
+            "dependencies": (
+                context.dependencies
+            ),
 
             "tree": context.tree,
 
-            "index": self.code_indexer.to_dict(),
-
+            "index": (
+                self.code_indexer
+                .to_dict()
+            ),
         }
 
     # ======================================================
     # REFRESH
     # ======================================================
 
-    def refresh(
-        self,
-    ) -> None:
-        """
-        Rebuild project context after files change.
-        """
+    def refresh(self) -> None:
+
+        context = (
+            self.require_context()
+        )
 
         self.build(
-            Path(self.require_context().summary.root)
+            context.summary.root
         )
 
     # ======================================================
-    # RESET
+    # CLEAR
     # ======================================================
 
-    def clear(
-        self,
-    ) -> None:
-        """
-        Remove cached project context.
-        """
+    def clear(self) -> None:
 
         self.context = None
 
-        self._file_by_name = {}
+        self._file_by_name.clear()
 
         self.code_indexer.clear()
 
@@ -656,34 +807,37 @@ class ProjectContext:
     # MAGIC METHODS
     # ======================================================
 
-    def __len__(
-        self,
-    ) -> int:
+    def __len__(self) -> int:
 
         if not self.ready:
 
             return 0
 
-        return self.context.summary.total_files
+        return (
+            self.context
+            .summary
+            .total_files
+        )
 
-    def __bool__(
-        self,
-    ) -> bool:
+    def __bool__(self) -> bool:
 
         return self.ready
 
-    def __repr__(
-        self,
-    ) -> str:
+    def __repr__(self) -> str:
 
         if not self.ready:
 
-            return "ProjectContext(not built)"
+            return (
+                "ProjectContext(not built)"
+            )
 
-        summary = self.context.summary
+        summary = (
+            self.context.summary
+        )
 
         return (
             "ProjectContext("
             f"{summary.project_name}, "
             f"{summary.total_files} files)"
         )
+        
