@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -26,6 +27,7 @@ class PythonExecutor:
 
     Important:
     Generated projects may be:
+
         - CLI applications
         - argparse applications
         - simple scripts
@@ -35,6 +37,23 @@ class PythonExecutor:
 
     The executor must not blindly execute every application
     with zero arguments.
+
+    Important pytest isolation rule:
+
+    Generated projects are executed independently from the
+    AutoDev-AI backend.
+
+    This prevents imports such as:
+
+        from app import add
+
+    inside a generated project from accidentally importing:
+
+        backend/app/
+
+    instead of:
+
+        generated_project/app.py
     """
 
     EXECUTION_TIMEOUT = 30
@@ -83,6 +102,14 @@ class PythonExecutor:
         self,
         project_path: str,
     ) -> dict:
+        """
+        Execute a generated Python project.
+
+        If the project contains tests, pytest is executed first.
+
+        The generated project's directory is explicitly isolated
+        from the AutoDev-AI backend so imports resolve correctly.
+        """
 
         start_time = time.perf_counter()
 
@@ -155,8 +182,8 @@ class PythonExecutor:
                 )
 
             logger.info(
-                f"Python entry point: "
-                f"{entry.relative_to(project)}"
+                "Python entry point: %s",
+                entry.relative_to(project),
             )
 
             # --------------------------------------------------
@@ -203,8 +230,8 @@ class PythonExecutor:
             )
 
             logger.info(
-                f"Detected Python execution mode: "
-                f"{execution_mode}"
+                "Detected Python execution mode: %s",
+                execution_mode,
             )
 
             # --------------------------------------------------
@@ -241,8 +268,9 @@ class PythonExecutor:
             }:
 
                 logger.warning(
-                    f"{execution_mode.capitalize()} application "
-                    "detected; startup execution skipped."
+                    "%s application detected; "
+                    "startup execution skipped.",
+                    execution_mode.capitalize(),
                 )
 
                 return self._finish(
@@ -250,8 +278,9 @@ class PythonExecutor:
                         "success": True,
                         "stdout": "",
                         "stderr": (
-                            f"{execution_mode.capitalize()} application "
-                            "detected; startup execution skipped."
+                            f"{execution_mode.capitalize()} "
+                            "application detected; "
+                            "startup execution skipped."
                         ),
                         "return_code": 0,
                     },
@@ -268,7 +297,8 @@ class PythonExecutor:
             )
 
             logger.info(
-                f"Execution command: {' '.join(command)}"
+                "Execution command: %s",
+                " ".join(command),
             )
 
             # --------------------------------------------------
@@ -284,6 +314,7 @@ class PythonExecutor:
                 errors="replace",
                 timeout=self.EXECUTION_TIMEOUT,
                 stdin=subprocess.DEVNULL,
+                env=self._build_environment(project),
             )
 
             return self._finish(
@@ -329,6 +360,55 @@ class PythonExecutor:
             )
 
     # ==========================================================
+    # ENVIRONMENT
+    # ==========================================================
+
+    def _build_environment(
+        self,
+        project: Path,
+    ) -> dict:
+        """
+        Build an isolated environment for the generated project.
+
+        The generated project directory is placed FIRST in
+        PYTHONPATH.
+
+        This is critical for projects containing:
+
+            app.py
+
+        and tests containing:
+
+            from app import ...
+
+        Without this isolation, the AutoDev-AI backend's own
+        `app` package can be imported accidentally.
+        """
+
+        env = os.environ.copy()
+
+        project_string = str(project)
+
+        existing_pythonpath = env.get(
+            "PYTHONPATH",
+            "",
+        )
+
+        if existing_pythonpath:
+
+            env["PYTHONPATH"] = (
+                project_string
+                + os.pathsep
+                + existing_pythonpath
+            )
+
+        else:
+
+            env["PYTHONPATH"] = project_string
+
+        return env
+
+    # ==========================================================
     # DEPENDENCIES
     # ==========================================================
 
@@ -340,6 +420,7 @@ class PythonExecutor:
         requirements = project / "requirements.txt"
 
         if not requirements.exists():
+
             logger.info(
                 "No requirements.txt found; "
                 "dependency installation skipped."
@@ -388,6 +469,7 @@ class PythonExecutor:
                 encoding="utf-8",
                 errors="replace",
                 timeout=self.INSTALL_TIMEOUT,
+                env=self._build_environment(project),
             )
 
             if process.returncode != 0:
@@ -438,20 +520,44 @@ class PythonExecutor:
         self,
         project: Path,
     ) -> dict:
+        """
+        Run tests inside the generated project.
+
+        IMPORTANT:
+
+        pytest is executed with:
+
+            cwd=project
+
+        and:
+
+            PYTHONPATH=<generated project>
+
+        This prevents the AutoDev-AI backend's own `app` package
+        from being imported by generated tests.
+        """
 
         logger.info(
-            "Running pytest..."
+            "Running pytest in generated project: %s",
+            project,
+        )
+
+        command = [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+        ]
+
+        logger.info(
+            "Pytest command: %s",
+            " ".join(command),
         )
 
         try:
 
             process = subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "pytest",
-                    "-q",
-                ],
+                command,
                 cwd=project,
                 capture_output=True,
                 text=True,
@@ -459,9 +565,15 @@ class PythonExecutor:
                 errors="replace",
                 timeout=self.EXECUTION_TIMEOUT,
                 stdin=subprocess.DEVNULL,
+                env=self._build_environment(project),
             )
 
-            # pytest return code 5 = no tests collected.
+            # --------------------------------------------------
+            # pytest return code 5 means no tests collected.
+            # That is not considered a failure for generated
+            # projects that simply don't contain runnable tests.
+            # --------------------------------------------------
+
             if process.returncode == 5:
 
                 return {
@@ -503,7 +615,7 @@ class PythonExecutor:
             }
 
     # ==========================================================
-    # COMPILE
+    # PYTHON SYNTAX VALIDATION
     # ==========================================================
 
     def _compile_project(
@@ -551,6 +663,7 @@ class PythonExecutor:
                     encoding="utf-8",
                     errors="replace",
                     timeout=10,
+                    env=self._build_environment(project),
                 )
 
                 if process.returncode != 0:
@@ -592,6 +705,7 @@ class PythonExecutor:
         Locate the best runnable Python entry point.
 
         Priority:
+
         1. Well-known entry filenames.
         2. Files containing __main__ guard.
         3. Shallowest Python source file.
@@ -643,6 +757,10 @@ class PythonExecutor:
 
         return candidates[0]
 
+    # ==========================================================
+    # MAIN GUARD
+    # ==========================================================
+
     def _has_main_guard(
         self,
         file: Path,
@@ -676,6 +794,7 @@ class PythonExecutor:
         Detect how the generated Python program expects to run.
 
         Returns:
+
             cli
             interactive
             web
@@ -684,7 +803,10 @@ class PythonExecutor:
 
         lowered = content.lower()
 
+        # ------------------------------------------------------
         # GUI frameworks
+        # ------------------------------------------------------
+
         if any(
             marker in lowered
             for marker in (
@@ -694,13 +816,19 @@ class PythonExecutor:
                 "from pygame",
                 "import pyqt",
                 "from pyqt",
-                "from PyQt".lower(),
+                "from pyqt5",
+                "from pyqt6",
+                "import pyqt5",
+                "import pyqt6",
             )
         ):
 
             return "gui"
 
+        # ------------------------------------------------------
         # Web frameworks
+        # ------------------------------------------------------
+
         if any(
             marker in lowered
             for marker in (
@@ -719,13 +847,10 @@ class PythonExecutor:
 
             return "web"
 
-        # Explicit interactive input.
-        #
-        # IMPORTANT:
-        # We do NOT classify every program containing
-        # "input(" as automatically successful anymore.
-        # We distinguish CLI programs from truly interactive
-        # programs.
+        # ------------------------------------------------------
+        # Interactive input
+        # ------------------------------------------------------
+
         if self._contains_input_call(content):
 
             if self._contains_cli_arguments(content):
@@ -759,6 +884,10 @@ class PythonExecutor:
             for pattern in patterns
         )
 
+    # ==========================================================
+    # INPUT DETECTION
+    # ==========================================================
+
     def _contains_input_call(
         self,
         content: str,
@@ -784,16 +913,16 @@ class PythonExecutor:
         Build a safe smoke-test command.
 
         argparse:
+
             python app.py --help
 
         sys.argv:
-            python app.py --help
+
+            python app.py <inferred arguments>
 
         normal script:
-            python app.py
 
-        Simple CLI calculator using sys.argv:
-            python app.py add 2 3
+            python app.py
         """
 
         command = [
@@ -839,21 +968,18 @@ class PythonExecutor:
                 content
             )
 
-            command.extend(smoke_args)
+            command.extend(
+                smoke_args
+            )
 
             return command
 
         # ------------------------------------------------------
-        # Interactive input without command arguments
+        # Interactive input
         # ------------------------------------------------------
 
         if self._contains_input_call(content):
 
-            # We cannot safely predict arbitrary input.
-            #
-            # Returning --help is not guaranteed to work,
-            # therefore we deliberately skip execution earlier
-            # for these applications.
             return command
 
         return command
@@ -869,8 +995,6 @@ class PythonExecutor:
         """
         Infer safe smoke-test arguments for common generated
         command-line applications.
-
-        This is intentionally conservative.
 
         Example:
 
@@ -908,7 +1032,7 @@ class PythonExecutor:
             ]
 
         # ------------------------------------------------------
-        # Common operation choices
+        # Common operation pattern
         # ------------------------------------------------------
 
         if (

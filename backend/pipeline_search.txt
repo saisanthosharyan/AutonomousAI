@@ -1,0 +1,336 @@
+﻿C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\coder.py:339: • Entry point must execute correctly.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:17: class FixerAgent(BaseAgent):
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:19: Autonomous software repair agent.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:22: failure information, asks an LLM to repair the project, and
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:23: returns the complete repaired SOURCE project.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:31: restores that import before returning the repaired project.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:344: "Repair response contains no FILE blocks."
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:719: "missing from the repair."
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:762: "project but is missing from the repair."
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:971: repaired: str,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:974: Find imports that disappeared from the repaired file
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1001: repaired
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1007: repaired_tree = ast.parse(
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1008: repaired
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1016: repaired_import_names = set()
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1019: repaired_tree
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1029: repaired_import_names.add(
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1043: repaired_import_names.add(
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1056: and name not in repaired_import_names
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1076: repaired: str,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1087: return repaired
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1092: repaired,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1097: return repaired
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1101: "in repaired file: %s",
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1110: repaired = (
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1113: + repaired.lstrip()
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1116: return repaired
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1128: Validate Python syntax before accepting the repair.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1161: repaired_files = []
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1185: repaired_files.append(
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1192: return repaired_files
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1202: repaired: str,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1208: remain available after repair.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1231: repaired,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1253: retry: str,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1256: retry_count: int = 0,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1259: retry_notice = ""
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1261: if retry_count >= 2:
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1263: retry_notice = (
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1266: "RETRY WARNING\n"
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1268: f"This is repair attempt #{retry_count}.\n"
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1269: "The previous repair did NOT solve the issue.\n"
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1276: You are AutoDev AI's autonomous software repair engineer.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1278: Your job is to repair the USER'S SOURCE PROJECT.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1286: You must return the COMPLETE repaired source project.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1323: Correct repair:
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1330: INCORRECT repair:
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1418: PREVIOUS REPAIR ATTEMPTS
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1421: {retry}
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1423: {retry_notice}
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1435: Repair ONLY real problems.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1478: Return ONLY the COMPLETE REPAIRED SOURCE PROJECT.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1633: retry_history=None,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1637: retry_count: Optional[int] = None,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1707: retry_text = (
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1708: self._to_text(retry_history)
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1709: or "No retry history."
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1753: # Retry count
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1756: if retry_count is None:
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1759: retry_history,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1763: retry_count = len(
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1764: retry_history
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1769: retry_count = 0
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1803: # Build repair prompt
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1812: retry=retry_text,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1815: retry_count=retry_count,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1819: "Sending repair request to LLM..."
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1928: # Validate repaired project.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1946: # Save successful repair to memory.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1956: review="Automatic repair generated.",
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:1964: "Failed to save repair memory."
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\fixer_agent.py:2118: "Validated repaired file: %s",
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\memory.py:83: def increment_retry(self):
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\memory.py:85: self.state.retry_count += 1
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:20: from app.services.retry.retry_manager import RetryManager
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:41: Execution / Retry Manager (repairs internally via FixerAgent)
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:50: intentionally NOT used here. RetryManager already performs the
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:51: full self-healing loop (execute -> debug -> FixerAgent ->
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:52: ProjectBuilder.rebuild() -> re-execute). Running FixManager on
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:53: top of that would be a second, overlapping repair engine, and
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:54: its repair_project() return shape (a dict) doesn't match what
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:55: this orchestrator expects from a repair step, so wiring it in
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:57: RetryManager's repair loop with FixManager's patch-based one
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:77: self.retry_manager = RetryManager(
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:295: async def execute(
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:324: # retry_stats must exist even if RetryManager raises before
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:327: retry_stats: dict[str, Any] = {}
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:482: # STEP 4 - EXECUTION (+ REPAIR VIA RETRY MANAGER)
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:499: retry_result = (
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:500: await self.retry_manager.execute_with_retry(
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:523: retry_result = None
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:527: if retry_result is not None:
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:529: # RetryManager.execute_with_retry() now returns a 5-tuple:
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:530: # (execution_result, project, code, debug_report, retry_stats)
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:532: retry_result,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:534: ) or len(retry_result) != 5:
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:537: "RetryManager returned an invalid result. "
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:539: "debug_report, retry_stats)"
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:547: retry_stats,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:548: ) = retry_result
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:560: retry_stats = (
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:561: retry_stats
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:654: # NOTE: review / validation / retry_stats / execution are
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:740: retry_stats = (
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:741: retry_stats
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:787: "retry_stats": retry_stats,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\orchestrator.py:796: "retry_stats": retry_stats,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\state.py:58: # Retry Information
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\state.py:61: retry_count: int = 0
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\workflow.py:8: from app.services.retry.retry_manager import RetryManager
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\workflow.py:16: Executes the complete AutoDev-AI workflow.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\workflow.py:28: self.retry = RetryManager()
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\workflow.py:85: # Execute + Retry
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\agents\workflow.py:95: ) = await self.retry.execute_with_retry(
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\api\chat.py:51: # Execute AI Pipeline
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\api\chat.py:56: result = await orchestrator.execute(
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\builders\project_builder.py:145: # REBUILD / REPAIR EXISTING PROJECT
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\builders\project_builder.py:189: "AI repair produced no valid files."
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\core\config.py:61: # Retry Configuration
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\core\config.py:65: RETRY_DELAY: int = 2
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\memory\context_builder.py:76: "repair_applied",
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\memory\context_builder.py:77: "repair",
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\memory\context_builder.py:80: "retry_failed",
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\memory\memory_manager.py:222: # directly (RetryManager, FixerAgent) are unaffected and keep
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\memory\memory_manager.py:238: so it's retrievable and embeddable the same way repairs are.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\memory\memory_store.py:23: • automatic repair
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\memory\memory_store.py:32: "type": "repair",
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\memory\memory_store.py:55: attempt=2, as used by RetryManager/FixerAgent) are no longer a
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\memory\memory_store.py:138: # title, which stays identical across every retry attempt on
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\memory\memory_store.py:140: # silently drop every execution_failure/repair memory after
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\memory\memory_store.py:141: # the first attempt, which defeats the purpose of retry
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\project\project_analyzer.py:23: - Provide project metadata to ExecutionManager,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\debugger\debug_manager.py:5: class DebugManager:
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\debugger\debug_manager.py:9: The report is passed to the FixerAgent so the LLM can understand
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\debugger\debug_manager.py:10: what failed and repair the generated project.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\debugger\debug_manager.py:50: "entry point, and executor configuration."
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\debugger\debug_manager.py:60: "Verify project structure and executor configuration."
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\debugger\debug_manager.py:83: "Project executed successfully."
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\debugger\debug_manager.py:91: "summary": "Project executed successfully.",
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\debugger\debug_manager.py:141: "Inspect the execution logs and repair "
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\debugger\debug_manager.py:212: "repair the project."
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\debugger\error_analyzer.py:10: structured information for the FixerAgent.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\debugger\error_analyzer.py:323: "entry point, and executor configuration."
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\debugger\error_analyzer.py:359: summary="Project executed successfully.",
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\debugger\error_analyzer.py:404: "configuration. Repair the root cause "
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\debugger\__init__.py:1: from .debug_manager import DebugManager
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\evaluator\evaluator.py:6: from app.services.execution.execution_manager import ExecutionManager
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\evaluator\evaluator.py:28: self.execution_manager = ExecutionManager()
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\cpp_executor.py:10: class CPPExecutor:
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\cpp_executor.py:12: Executes C++ projects by compiling and running
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\cpp_executor.py:62: logger.info("C++ Executor Started")
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\cpp_executor.py:159: logger.info("C++ Executor Finished")
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\docker_executor.py:13: class DockerExecutor:
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\docker_executor.py:15: Executes Docker-based projects.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\docker_executor.py:71: logger.info("Docker Executor Started")
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\docker_executor.py:184: logger.info("Docker Executor Finished")
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_logger.py:13: 3.  Saves the executor + command that was run.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_logger.py:167: executor: Optional[str] = None,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_logger.py:197: "executor": executor,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_logger.py:226: "Success=%s | ReturnCode=%s | Time=%.3fs (%sms) | Executor=%s | Command=%s",
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_logger.py:231: executor,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:11: from app.services.execution.python_executor import PythonExecutor
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:12: from app.services.execution.node_executor import NodeExecutor
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:13: from app.services.execution.java_executor import JavaExecutor
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:14: from app.services.execution.cpp_executor import CPPExecutor
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:15: from app.services.execution.docker_executor import DockerExecutor
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:19: # ExecutionManager no longer re-implements detection heuristics of its own —
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:25: class Executor(Protocol):
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:27: Minimal structural type for executors: anything with a
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:29: safety without depending on a concrete BaseExecutor class
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:57: class ExecutionManager:
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:59: Executes a generated project using the appropriate executor,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:71: falls back to the underlying native executor (as reported by
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:81: self.executors: Dict[str, Executor] = {
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:82: "python": PythonExecutor(),
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:83: "node": NodeExecutor(),
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:84: "java": JavaExecutor(),
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:85: "cpp": CPPExecutor(),
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:86: "docker": DockerExecutor(),
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:94: "ExecutionManager initialized with %d executors.",
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:95: len(self.executors),
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:132: detection across ExecutionManager and TestManager.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:177: # GET EXECUTOR
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:180: def _get_executor(self, project_type: str) -> Executor:
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:182: executor = self.executors.get(project_type)
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:184: if executor is None:
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:186: f"No executor registered for '{project_type}'."
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:189: if not hasattr(executor, "run"):
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:191: f"Executor '{project_type}' has no run() method."
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:194: return executor
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:197: # NORMALIZE EXECUTOR RESULT
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:203: Guarantee that whatever an executor returns is usable as
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:204: a dict downstream. Executors are third-party-ish code
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:212: "Executor returned a non-dict result (%s); normalizing.",
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:219: "stderr": "Executor returned invalid result.",
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:254: # Get executor
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:257: executor = self._get_executor(project_type)
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:259: logger.info("Using %s executor.", project_type)
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:262: # Execute project
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:265: execution_result = executor.run(project_path)
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:272: # Docker fallback (executor itself opted to skip, e.g.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:292: fallback_executor = self._get_executor(fallback)
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:295: fallback_executor.run(project_path)
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:349: # REGISTER EXECUTOR
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:352: def register_executor(self, name: str, executor: Executor) -> None:
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:354: Register a custom executor.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:357: if not hasattr(executor, "run"):
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:358: raise TypeError("Executor must implement run().")
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:360: self.executors[name] = executor
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:362: logger.info("Registered executor: %s", name)
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:365: # AVAILABLE EXECUTORS
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:368: def available_executors(self) -> list[str]:
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:370: Return all registered executors.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:373: return sorted(self.executors.keys())
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:376: # HAS EXECUTOR
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:379: def has_executor(self, name: str) -> bool:
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:381: Check whether an executor exists.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\execution_manager.py:384: return name in self.executors
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\java_executor.py:9: class JavaExecutor:
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\java_executor.py:11: Executes Java projects.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\java_executor.py:58: logger.info("Java Executor Started")
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\java_executor.py:202: logger.info("Java Executor Finished")
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\node_executor.py:14: class NodeExecutor:
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\node_executor.py:16: Executes Node.js based projects.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\node_executor.py:56: logger.info("Node Executor Started")
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\node_executor.py:93: return self._execute(project, command, is_server, env)
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\node_executor.py:102: logger.info("Node Executor Finished")
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\node_executor.py:430: def _execute(self, project: Path, command: list[str], is_server: bool, env: dict):
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\python_executor.py:12: class PythonExecutor:
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\python_executor.py:14: Executes generated Python projects with controlled smoke tests.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\python_executor.py:36: The executor must not blindly execute every application
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\python_executor.py:102: f"PythonExecutor running: {project}"
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\python_executor.py:275: # Execute
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\python_executor.py:323: "PythonExecutor failed."
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\__init__.py:1: from .execution_manager import ExecutionManager
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\execution\__init__.py:3: __all__ = ["ExecutionManager"]
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\fixer\fix_history.py:11: Stores every automatic repair attempt.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\fixer\prompt_builder.py:11: Builds a structured repair prompt for the LLM.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\fixer\prompt_builder.py:21: The LLM must only repair the project and return
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\fixer\prompt_builder.py:36: logger.info("Building repair prompt")
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\fixer\prompt_builder.py:103: Repair ONLY the broken files.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\fixer\prompt_builder.py:126: logger.info("Repair prompt built successfully.")
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\llm\providers\gemini_service.py:10: from app.utils.retry import retry
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\llm\providers\gemini_service.py:123: @retry(max_retries=3, delay=2)
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\llm\providers\gemini_service.py:173: @retry(max_retries=3, delay=2)
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\llm\providers\gemini_service.py:229: @retry(max_retries=3, delay=2)
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\llm\providers\openai_service.py:8: from app.utils.retry import retry
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\llm\providers\openai_service.py:37: @retry(max_retries=3, delay=2)
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\llm\providers\openai_service.py:82: @retry(max_retries=3, delay=2)
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\llm\providers\openai_service.py:127: @retry(max_retries=3, delay=2)
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\repair\repair_report.py:5: class RepairReporter:
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\repair\repair_report.py:8: AutoDev-AI repairs a generated project.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\repair\repair_report.py:15: self.folder = self.project / "repair"
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\repair\repair_report.py:31: 2. Repaired code
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\repair\repair_report.py:33: 4. AI repair report
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\repair\repair_report.py:98: # Generate repair report
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\repair\repair_report.py:101: report = f"""# AutoDev-AI Repair Report
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\repair\repair_report.py:103: ## Repair Status
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\repair\repair_report.py:105: AI automatically repaired the generated project after execution failed.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\repair\repair_report.py:123: `repair/old_code.txt`
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\repair\repair_report.py:125: ### Repaired Code
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\repair\repair_report.py:129: `repair/new_code.txt`
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\repair\repair_report.py:135: `repair/diff.patch`
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\repair\repair_report.py:139: ## Repair Files
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\repair\repair_report.py:143: | `old_code.txt` | Code before AI repair |
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\repair\repair_report.py:144: | `new_code.txt` | Code after AI repair |
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\repair\repair_report.py:146: | `repair_report.md` | Complete repair information |
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\repair\repair_report.py:155: report_file = self.folder / "repair_report.md"
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\repair\repair_report.py:163: "repair_folder": str(self.folder),
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:8: from app.agents.fixer_agent import FixerAgent
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:12: from app.services.execution.execution_manager import ExecutionManager
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:13: from app.services.debugger.debug_manager import DebugManager
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:14: from app.services.repair.repair_report import RepairReporter
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:50: class RetryManager:
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:52: Executes a generated project and automatically repairs it
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:55: This is the ONLY repair engine used by the pipeline. FixManager
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:57: here to avoid running two independent, overlapping repair
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:62: # treated as a no-op repair (cosmetic-only change) and stops the loop.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:75: self.executor = ExecutionManager()
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:76: self.debugger = DebugManager()
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:78: self.fixer = FixerAgent()
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:81: # repair memory persists across Coder / Reviewer / Fixer. Falls
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:85: async def execute_with_retry(
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:116: retry_stats = {
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:118: "repairs": 0,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:123: repair_history = []
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:138: retry_stats["attempts"] += 1
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:144: execution_result = self.executor.run(
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:167: "ExecutionManager returned unexpected result type: %s",
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:199: f"Project executed successfully on attempt {attempt}."
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:202: retry_stats["successful"] = True
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:220: "retry_stats": retry_stats,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:221: "repair_history": repair_history,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:230: retry_stats,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:237: retry_stats["execution_failures"] += 1
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:263: retry_stats["repeated_errors_detected"] += 1
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:267: f"repair is not making progress. Stopping early."
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:276: "retry_stats": retry_stats,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:277: "repair_history": repair_history,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:357: "Maximum retry attempts reached."
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:363: "Requesting AI repair..."
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:385: "repair_error": str(exc),
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:417: f"Fixer returned a near-identical repair "
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:424: "repair_error": (
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:425: f"Repair too similar to previous code "
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:441: f"Repair similarity to previous code: {similarity:.4f}"
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:444: repair_history.append(
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:453: retry_stats["repairs"] += 1
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:456: # SAVE REPAIR MEMORY
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:462: memory_type="repair",
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:477: "Failed to save repair memory."
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:507: "repair_error": str(exc),
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:513: # SAVE REPAIR REPORT
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:518: reporter = RepairReporter(
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:531: "Repair report saved successfully."
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:537: "Failed to save repair report."
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:541: # SAVE REPAIR-APPLIED MEMORY
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:543: # NOTE: renamed from "successful_repair" -> "repair_applied".
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:555: memory_type="repair_applied",
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:562: review="Automatic repair rebuilt; awaiting re-execution.",
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:571: "Failed to save repair-applied memory."
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:575: "Repaired project will now be executed again."
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:602: memory_type="retry_failed",
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:617: "Failed to save retry failure memory."
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:622: "retry_stats": retry_stats,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:623: "repair_history": repair_history,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\services\retry\retry_manager.py:632: retry_stats,
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\utils\retry.py:7: NON_RETRYABLE_ERRORS = (
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\utils\retry.py:24: def retry(max_retries: int = 3, delay: int = 2):
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\utils\retry.py:26: Retry an async function only for transient failures.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\utils\retry.py:29: max_retries: Maximum retry attempts.
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\utils\retry.py:52: f"[Retry {attempt}/{max_retries}] "
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\utils\retry.py:56: # Don't retry permanent errors
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\utils\retry.py:57: if any(keyword.lower() in error for keyword in NON_RETRYABLE_ERRORS):
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\utils\retry.py:60: "Non-retryable error detected. "
+C:\Users\iamar\OneDrive\Desktop\Autodev-AI\backend\app\utils\retry.py:69: f"Retrying in {delay} second(s)..."

@@ -21,18 +21,60 @@ from app.memory.memory_manager import MemoryManager
 
 _ERROR_PATTERNS = [
     ("SyntaxError", re.compile(r"SyntaxError", re.I)),
-    ("ImportError", re.compile(r"ImportError|ImportModuleError", re.I)),
-    ("ModuleNotFoundError", re.compile(r"ModuleNotFoundError", re.I)),
-    ("DatabaseError", re.compile(r"OperationalError|IntegrityError|DatabaseError|psycopg2|sqlite3\.", re.I)),
-    ("PermissionError", re.compile(r"PermissionError|Permission denied", re.I)),
-    ("APIError", re.compile(r"APIError|HTTPError|status code (4|5)\d\d", re.I)),
-    ("DockerError", re.compile(r"docker|container", re.I)),
-    ("DependencyError", re.compile(r"No matching distribution|pip install|version conflict", re.I)),
+    (
+        "NameError",
+        re.compile(r"NameError", re.I),
+    ),
+    (
+        "ImportError",
+        re.compile(r"ImportError|ImportModuleError", re.I),
+    ),
+    (
+        "ModuleNotFoundError",
+        re.compile(r"ModuleNotFoundError", re.I),
+    ),
+    (
+        "DatabaseError",
+        re.compile(
+            r"OperationalError|IntegrityError|DatabaseError|"
+            r"psycopg2|sqlite3\.",
+            re.I,
+        ),
+    ),
+    (
+        "PermissionError",
+        re.compile(r"PermissionError|Permission denied", re.I),
+    ),
+    (
+        "APIError",
+        re.compile(
+            r"APIError|HTTPError|status code (4|5)\d\d",
+            re.I,
+        ),
+    ),
+    (
+        "DockerError",
+        re.compile(r"docker|container", re.I),
+    ),
+    (
+        "DependencyError",
+        re.compile(
+            r"No matching distribution|pip install|version conflict",
+            re.I,
+        ),
+    ),
     ("TypeError", re.compile(r"TypeError", re.I)),
     ("ValueError", re.compile(r"ValueError", re.I)),
     ("AttributeError", re.compile(r"AttributeError", re.I)),
     ("KeyError", re.compile(r"KeyError", re.I)),
-    ("TimeoutError", re.compile(r"TimeoutError|timed out", re.I)),
+    (
+        "TimeoutError",
+        re.compile(r"TimeoutError|timed out", re.I),
+    ),
+    (
+        "AssertionError",
+        re.compile(r"AssertionError", re.I),
+    ),
 ]
 
 
@@ -49,18 +91,26 @@ def categorize_error(stderr: str) -> str:
 
 class RetryManager:
     """
-    Executes a generated project and automatically repairs it
-    when execution fails.
+    Executes a generated project and automatically repairs it.
 
-    This is the ONLY repair engine used by the pipeline. FixManager
-    (app/services/fixer/fix_manager.py) is intentionally not used
-    here to avoid running two independent, overlapping repair
-    systems against the same project.
+    RetryManager is the main execution/repair orchestration layer.
+
+    FixerAgent performs the actual AI repair.
+
+    The important distinction is:
+
+        RetryManager retry
+            =
+        execute repaired project again
+
+    while:
+
+        FixerAgent retry
+            =
+        ask the LLM again when the generated repair is unusable.
     """
 
-    # Fixer output that is >= this similar to the previous attempt is
-    # treated as a no-op repair (cosmetic-only change) and stops the loop.
-    SIMILARITY_THRESHOLD = 0.98
+    SIMILARITY_THRESHOLD = 0.999
 
     def __init__(
         self,
@@ -77,9 +127,6 @@ class RetryManager:
         self.builder = ProjectBuilder()
         self.fixer = FixerAgent()
 
-        # Use the shared MemoryManager passed in by the orchestrator so
-        # repair memory persists across Coder / Reviewer / Fixer. Falls
-        # back to a fresh instance if run standalone.
         self.memory = memory or MemoryManager()
 
     async def execute_with_retry(
@@ -88,7 +135,6 @@ class RetryManager:
         code: str,
         review=None,
     ):
-
         if not project:
             raise ValueError(
                 "Project information cannot be empty."
@@ -110,9 +156,6 @@ class RetryManager:
         execution_result = None
         debug_report = {}
 
-        # ------------------------------------------------------------
-        # Tracking state (new)
-        # ------------------------------------------------------------
         retry_stats = {
             "attempts": 0,
             "repairs": 0,
@@ -120,6 +163,7 @@ class RetryManager:
             "repeated_errors_detected": 0,
             "successful": False,
         }
+
         repair_history = []
         timeline = []
         previous_errors = []
@@ -128,10 +172,11 @@ class RetryManager:
             1,
             self.max_retries + 1,
         ):
-
             logger.info("=" * 60)
             logger.info(
-                f"Execution Attempt {attempt}/{self.max_retries}"
+                "Execution Attempt %s/%s",
+                attempt,
+                self.max_retries,
             )
             logger.info("=" * 60)
 
@@ -140,13 +185,11 @@ class RetryManager:
             attempt_start = time.monotonic()
 
             try:
-
                 execution_result = self.executor.run(
                     current_project["project_path"]
                 )
 
             except Exception as exc:
-
                 logger.exception(
                     "Execution crashed."
                 )
@@ -160,11 +203,17 @@ class RetryManager:
                 }
 
             if hasattr(execution_result, "to_dict"):
-                execution_result = execution_result.to_dict()
+                execution_result = (
+                    execution_result.to_dict()
+                )
 
-            elif not isinstance(execution_result, dict):
+            elif not isinstance(
+                execution_result,
+                dict,
+            ):
                 logger.warning(
-                    "ExecutionManager returned unexpected result type: %s",
+                    "ExecutionManager returned unexpected "
+                    "result type: %s",
                     type(execution_result).__name__,
                 )
 
@@ -172,31 +221,37 @@ class RetryManager:
                     "success": False,
                     "stdout": "",
                     "stderr": (
-                        f"Invalid execution result type: "
+                        "Invalid execution result type: "
                         f"{type(execution_result).__name__}"
                     ),
                     "return_code": -1,
                     "execution_time": 0,
                 }
 
-            elapsed = time.monotonic() - attempt_start
+            elapsed = (
+                time.monotonic()
+                - attempt_start
+            )
+
             timeline.append(
                 {
                     "attempt": attempt,
                     "execution_time": execution_result.get(
-                        "execution_time", elapsed
+                        "execution_time",
+                        elapsed,
                     ),
                 }
             )
 
-            # ------------------------------------------
+            # --------------------------------------------------
             # SUCCESS
-            # ------------------------------------------
+            # --------------------------------------------------
 
             if execution_result.get("success"):
-
                 logger.info(
-                    f"Project executed successfully on attempt {attempt}."
+                    "Project executed successfully "
+                    "on attempt %s.",
+                    attempt,
                 )
 
                 retry_stats["successful"] = True
@@ -231,10 +286,13 @@ class RetryManager:
                 )
 
             logger.warning(
-                f"Execution failed on attempt {attempt}."
+                "Execution failed on attempt %s.",
+                attempt,
             )
 
-            retry_stats["execution_failures"] += 1
+            retry_stats[
+                "execution_failures"
+            ] += 1
 
             stderr = execution_result.get(
                 "stderr",
@@ -252,27 +310,44 @@ class RetryManager:
             if stdout:
                 logger.info(stdout)
 
-            category = categorize_error(stderr)
+            combined_error = "\n".join(
+                part
+                for part in [
+                    stderr,
+                    stdout,
+                ]
+                if part
+            )
 
-            # ------------------------------------------
-            # REPEATED ERROR DETECTION
-            # ------------------------------------------
+            category = categorize_error(combined_error)
 
-            if stderr and stderr in previous_errors:
+            # --------------------------------------------------
+            # Repeated execution error detection
+            # --------------------------------------------------
 
-                retry_stats["repeated_errors_detected"] += 1
+            if combined_error and combined_error in previous_errors:
+                retry_stats[
+                    "repeated_errors_detected"
+                ] += 1
 
                 logger.warning(
-                    f"Identical error seen again (category={category}); "
-                    f"repair is not making progress. Stopping early."
+                    "Identical execution error seen again "
+                    "(category=%s).",
+                    category,
                 )
 
                 debug_report = {
                     "category": category,
-                    "summary": "Repeated identical error across attempts.",
+                    "summary": (
+                        "Repeated identical error "
+                        "across execution attempts."
+                    ),
                     "stdout": stdout,
                     "stderr": stderr,
-                    "return_code": execution_result.get("return_code", -1),
+                    "return_code": execution_result.get(
+                        "return_code",
+                        -1,
+                    ),
                     "retry_stats": retry_stats,
                     "repair_history": repair_history,
                     "timeline": timeline,
@@ -280,15 +355,14 @@ class RetryManager:
 
                 break
 
-            if stderr:
-                previous_errors.append(stderr)
+            if combined_error:
+                previous_errors.append(combined_error)
 
-            # ------------------------------------------
+            # --------------------------------------------------
             # DEBUG
-            # ------------------------------------------
+            # --------------------------------------------------
 
             try:
-
                 debug_report = self.debugger.analyze(
                     execution_result
                 )
@@ -298,7 +372,9 @@ class RetryManager:
                     dict,
                 ):
                     debug_report = {
-                        "summary": str(debug_report),
+                        "summary": str(
+                            debug_report
+                        ),
                         "stdout": stdout,
                         "stderr": stderr,
                         "return_code": execution_result.get(
@@ -308,7 +384,6 @@ class RetryManager:
                     }
 
             except Exception as exc:
-
                 logger.exception(
                     "Debug analysis failed."
                 )
@@ -323,16 +398,18 @@ class RetryManager:
                     ),
                 }
 
-            # Enrich debug report (new fields)
-            debug_report.setdefault("category", category)
+            debug_report.setdefault(
+                "category",
+                category,
+            )
+
             debug_report["attempt"] = attempt
 
-            # ------------------------------------------
-            # SAVE FAILURE MEMORY
-            # ------------------------------------------
+            # --------------------------------------------------
+            # FAILURE MEMORY
+            # --------------------------------------------------
 
             try:
-
                 self.memory.save(
                     memory_type="execution_failure",
                     prompt=current_project.get(
@@ -344,20 +421,24 @@ class RetryManager:
                     category=category,
                     attempt=attempt,
                 )
-
             except Exception:
-
                 logger.exception(
                     "Failed to save execution failure."
                 )
 
-            if attempt >= self.max_retries:
+            # --------------------------------------------------
+            # No more execution retries
+            # --------------------------------------------------
 
+            if attempt >= self.max_retries:
                 logger.error(
                     "Maximum retry attempts reached."
                 )
-
                 break
+
+            # --------------------------------------------------
+            # AI REPAIR
+            # --------------------------------------------------
 
             logger.info(
                 "Requesting AI repair..."
@@ -366,16 +447,35 @@ class RetryManager:
             old_code = current_code
 
             try:
-
                 fixed_code = await self.fixer.run(
                     code=current_code,
                     review=review,
                     execution_error=debug_report,
                     memory=self.memory,
+
+                    # IMPORTANT:
+                    # Give FixerAgent enough context to inspect
+                    # the actual generated project.
+                    project_directory=(
+                        current_project[
+                            "project_path"
+                        ]
+                    ),
+
+                    # This test is Python.
+                    # In the production pipeline this should come
+                    # from the detected project type if available.
+                    project_type="python",
+
+                    retry_history=repair_history,
+
+                    retry_count=attempt,
+
+                    # Enable during development/debugging.
+                    save_debug=True,
                 )
 
             except Exception as exc:
-
                 logger.exception(
                     "Fixer Agent failed."
                 )
@@ -388,22 +488,32 @@ class RetryManager:
                 break
 
             if not fixed_code:
+                logger.error(
+                    "Fixer returned empty repair."
+                )
                 break
 
             fixed_code = fixed_code.strip()
 
-            if fixed_code == old_code:
-
-                logger.warning(
-                    "Fixer returned identical code."
+            if fixed_code == old_code.strip():
+                logger.error(
+                    "Fixer returned identical code "
+                    "after its internal repair retries."
                 )
+
+                debug_report = {
+                    **debug_report,
+                    "repair_error": (
+                        "Fixer returned identical "
+                        "code."
+                    ),
+                }
 
                 break
 
-            # ------------------------------------------
-            # SIMILARITY CHECK (prevents wasting retries
-            # on near-cosmetic changes)
-            # ------------------------------------------
+            # --------------------------------------------------
+            # Similarity
+            # --------------------------------------------------
 
             similarity = difflib.SequenceMatcher(
                 None,
@@ -411,53 +521,49 @@ class RetryManager:
                 fixed_code,
             ).ratio()
 
-            if similarity > self.SIMILARITY_THRESHOLD:
+            logger.info(
+                "Old size: %s",
+                len(old_code),
+            )
 
+            logger.info(
+                "New size: %s",
+                len(fixed_code),
+            )
+
+            logger.info(
+                "Repair similarity: %.4f",
+                similarity,
+            )
+
+            if (
+                similarity
+                >= self.SIMILARITY_THRESHOLD
+            ):
                 logger.warning(
-                    f"Fixer returned a near-identical repair "
-                    f"(similarity={similarity:.4f}); stopping to avoid "
-                    f"wasting retries on cosmetic-only changes."
+                    "Repair is extremely similar to "
+                    "the previous source."
                 )
-
-                debug_report = {
-                    **debug_report,
-                    "repair_error": (
-                        f"Repair too similar to previous code "
-                        f"(similarity={similarity:.4f})."
-                    ),
-                }
-
-                break
-
-            logger.info(
-                f"Old size: {len(old_code)}"
-            )
-
-            logger.info(
-                f"New size: {len(fixed_code)}"
-            )
-
-            logger.info(
-                f"Repair similarity to previous code: {similarity:.4f}"
-            )
 
             repair_history.append(
                 {
                     "attempt": attempt,
                     "category": category,
-                    "error": stderr,
-                    "similarity": round(similarity, 4),
+                    "error": combined_error,
+                    "similarity": round(
+                        similarity,
+                        4,
+                    ),
                 }
             )
 
             retry_stats["repairs"] += 1
 
-            # ------------------------------------------
-            # SAVE REPAIR MEMORY
-            # ------------------------------------------
+            # --------------------------------------------------
+            # Repair memory
+            # --------------------------------------------------
 
             try:
-
                 self.memory.save(
                     memory_type="repair",
                     prompt=current_project.get(
@@ -470,18 +576,23 @@ class RetryManager:
                     category=category,
                     attempt=attempt,
                 )
-
             except Exception:
-
                 logger.exception(
                     "Failed to save repair memory."
                 )
 
-            try:
+            # --------------------------------------------------
+            # Rebuild project
+            # --------------------------------------------------
 
-                updated_project = self.builder.rebuild(
-                    current_project["project_path"],
-                    fixed_code,
+            try:
+                updated_project = (
+                    self.builder.rebuild(
+                        current_project[
+                            "project_path"
+                        ],
+                        fixed_code,
+                    )
                 )
 
                 if not updated_project:
@@ -489,7 +600,10 @@ class RetryManager:
                         "Project rebuild failed."
                     )
 
-                current_project = updated_project
+                current_project = (
+                    updated_project
+                )
+
                 current_code = fixed_code
 
                 logger.info(
@@ -497,7 +611,6 @@ class RetryManager:
                 )
 
             except Exception as exc:
-
                 logger.exception(
                     "Project rebuild failed."
                 )
@@ -509,12 +622,11 @@ class RetryManager:
 
                 break
 
-            # ==================================================
-            # SAVE REPAIR REPORT
-            # ==================================================
+            # --------------------------------------------------
+            # Repair report
+            # --------------------------------------------------
 
             try:
-
                 reporter = RepairReporter(
                     current_project[
                         "project_path"
@@ -532,25 +644,15 @@ class RetryManager:
                 )
 
             except Exception:
-
                 logger.exception(
                     "Failed to save repair report."
                 )
 
-            # ------------------------------------------
-            # SAVE REPAIR-APPLIED MEMORY
-            #
-            # NOTE: renamed from "successful_repair" -> "repair_applied".
-            # At this point we only know the rebuild succeeded, not that
-            # the fix actually resolves the failure -- that's only known
-            # once the next execution attempt runs. Calling this
-            # "successful" was misleading; the true success memory is
-            # still written above under "execution_success" once a
-            # subsequent attempt passes.
-            # ------------------------------------------
+            # --------------------------------------------------
+            # Repair applied memory
+            # --------------------------------------------------
 
             try:
-
                 self.memory.save(
                     memory_type="repair_applied",
                     prompt=current_project.get(
@@ -559,45 +661,45 @@ class RetryManager:
                     ),
                     error=stderr,
                     fix=fixed_code[:3000],
-                    review="Automatic repair rebuilt; awaiting re-execution.",
+                    review=(
+                        "Automatic repair rebuilt; "
+                        "awaiting re-execution."
+                    ),
                     success=False,
                     category=category,
                     attempt=attempt,
                 )
 
             except Exception:
-
                 logger.exception(
                     "Failed to save repair-applied memory."
                 )
 
             logger.info(
-                "Repaired project will now be executed again."
+                "Repaired project will now be "
+                "executed again."
             )
 
         # ======================================================
-        # FAILED AFTER ALL RETRIES
+        # FAILED
         # ======================================================
 
         logger.error(
-            f"Project failed after "
-            f"{self.max_retries} execution attempts."
+            "Project failed after %s "
+            "execution attempt(s).",
+            retry_stats["attempts"],
         )
 
         if execution_result is None:
-
             execution_result = {
                 "success": False,
                 "stdout": "",
-                "stderr": (
-                    "Execution never started."
-                ),
+                "stderr": "Execution never started.",
                 "return_code": -1,
                 "execution_time": 0,
             }
 
         try:
-
             self.memory.save(
                 memory_type="retry_failed",
                 prompt=current_project.get(
@@ -612,7 +714,6 @@ class RetryManager:
             )
 
         except Exception:
-
             logger.exception(
                 "Failed to save retry failure memory."
             )

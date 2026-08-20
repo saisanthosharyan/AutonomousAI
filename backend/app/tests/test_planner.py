@@ -1,16 +1,14 @@
-import asyncio
+import pytest
 
 from app.agents.planner import PlannerAgent
 
 
-async def main():
+@pytest.mark.asyncio
+async def test_planner_generates_plan():
 
     planner = PlannerAgent()
 
     plan = await planner.run("Build a Todo App")
 
-    print(plan)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    assert plan is not None
+    assert plan != ""
