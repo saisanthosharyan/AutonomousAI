@@ -99,14 +99,26 @@ CURRENT PROJECT FILES
 ====================================================
 YOUR TASK
 ====================================================
+Repair ONLY the broken application files.
 
-Repair ONLY the broken files.
+IMPORTANT FILE PROTECTION RULES:
+
+- NEVER modify files inside tests/ or test/.
+- NEVER modify files matching test_*.py.
+- NEVER modify files matching *_test.py.
+- NEVER delete tests.
+- NEVER weaken, remove, rewrite, or bypass tests.
+- Tests are authoritative and must remain unchanged.
+- If a test is failing, fix the application code instead.
+- Only return application files that actually require changes.
 
 Do NOT remove working functionality.
 
 Do NOT rewrite the entire project.
 
 Only modify what is necessary.
+
+Prefer the smallest possible repair.
 
 Return your response EXACTLY using this format:
 

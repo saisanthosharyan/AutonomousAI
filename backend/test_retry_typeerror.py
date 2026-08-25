@@ -8,7 +8,7 @@ async def main():
 
     code = '''FILE: app.py
 
-def add(a, b):
+def multiply(a, b):
     return a + "hello"
 
 FILE: requirements.txt
@@ -17,14 +17,14 @@ pytest
 
 FILE: tests/test_app.py
 
-from app import add
+from app import multiply
 
-def test_add():
-    assert add(2, 3) == 5
+def test_multiply():
+    assert multiply(2, 3) == 6
 '''
 
     # ----------------------------------------------------------
-    # Create real project
+    # Create real broken project
     # ----------------------------------------------------------
 
     builder = ProjectBuilder()

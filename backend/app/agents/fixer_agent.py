@@ -29,27 +29,6 @@ class FixerAgent(BaseAgent):
     If the LLM accidentally removes a Python import while the
     imported symbol is still used, the Fixer automatically
     restores that import before returning the repaired project.
-
-    Example:
-
-        Original:
-
-            from app import add
-
-            def test_add():
-                assert add(2, 3) == 5
-
-        Bad LLM response:
-
-            def test_add():
-                assert add(2, 3) == 5
-
-        Fixer automatically restores:
-
-            from app import add
-
-            def test_add():
-                assert add(2, 3) == 5
     """
 
     MIN_RESPONSE_LENGTH = 50
@@ -772,9 +751,6 @@ class FixerAgent(BaseAgent):
     ) -> List[str]:
         """
         Return original Python import statements.
-
-        AST is used to identify import statements while the
-        original source lines are preserved exactly.
         """
 
         try:
@@ -831,16 +807,6 @@ class FixerAgent(BaseAgent):
         """
         Map imported Python names to their original import
         statements.
-
-        Example:
-
-            from app import add
-
-        becomes:
-
-            {
-                "add": "from app import add"
-            }
         """
 
         try:
@@ -973,18 +939,6 @@ class FixerAgent(BaseAgent):
         """
         Find imports that disappeared from the repaired file
         while the imported symbol is still used.
-
-        This specifically prevents the failure seen in:
-
-            from app import add
-
-            def test_add():
-                assert add(2, 3) == 5
-
-        becoming:
-
-            def test_add():
-                assert add(2, 3) == 5
         """
 
         original_imports = (
@@ -1079,8 +1033,6 @@ class FixerAgent(BaseAgent):
         """
         Restore Python imports that were accidentally removed
         while their symbols are still being used.
-
-        Only Python files are processed.
         """
 
         if not path.lower().endswith(".py"):
@@ -1203,9 +1155,6 @@ class FixerAgent(BaseAgent):
     ) -> None:
         """
         Strong protection for test files.
-
-        If a test still uses an imported symbol, its import must
-        remain available after repair.
         """
 
         normalized = (
@@ -1238,12 +1187,396 @@ class FixerAgent(BaseAgent):
                 f"Test file '{path}' lost required "
                 f"imports: {missing}"
             )
+    # ==========================================================
+    # TEST FILE CONTENT PROTECTION
+    # ==========================================================
+
+    def _is_test_file(self, path: str) -> bool:
+        """
+        Determine whether a path belongs to a test file.
+
+        Existing tests are immutable during automatic repair.
+        """
+
+        normalized = self._normalize_path_key(path)
+        filename = PurePosixPath(normalized).name.lower()
+        parts = PurePosixPath(normalized).parts
+
+        return (
+            "test" in parts
+            or "tests" in parts
+            or filename.startswith("test_")
+            or filename.endswith("_test.py")
+            or filename.endswith(".test.js")
+            or filename.endswith(".test.jsx")
+            or filename.endswith(".test.ts")
+            or filename.endswith(".test.tsx")
+            or filename.endswith(".spec.js")
+            or filename.endswith(".spec.jsx")
+            or filename.endswith(".spec.ts")
+            or filename.endswith(".spec.tsx")
+        )
+
+    def _restore_original_test_files(
+        self,
+        file_blocks: List[Tuple[str, str]],
+        original_files: Dict[str, str],
+    ) -> List[Tuple[str, str]]:
+        """
+        Tests are immutable during automatic repair.
+
+        The LLM is never allowed to modify or remove an existing
+        test file. Every original test file is restored exactly
+        as it appeared in the original project.
+        """
+
+        # ----------------------------------------------------------
+        # Start with all non-test files returned by the LLM.
+        # ----------------------------------------------------------
+
+        protected_files: List[Tuple[str, str]] = []
+
+        generated_test_paths = set()
+
+        for path, content in file_blocks:
+
+            normalized = self._normalize_path_key(path)
+
+            # ------------------------------------------------------
+            # Existing test file
+            # ------------------------------------------------------
+
+            if self._is_test_file(path):
+
+                generated_test_paths.add(normalized)
+
+                original = original_files.get(normalized)
+
+                if original is not None:
+
+                    logger.warning(
+                        "TEST PROTECTION: restoring original test file '%s'.",
+                        path,
+                    )
+
+                    protected_files.append(
+                        (
+                            path,
+                            original,
+                        )
+                    )
+
+                    continue
+
+            # ------------------------------------------------------
+            # Non-test file
+            # ------------------------------------------------------
+
+            protected_files.append(
+                (
+                    path,
+                    content,
+                )
+            )
+
+        # ----------------------------------------------------------
+        # IMPORTANT:
+        #
+        # If the LLM completely omitted an original test file,
+        # put it back.
+        # ----------------------------------------------------------
+
+        existing_paths = {
+            self._normalize_path_key(path)
+            for path, _ in protected_files
+        }
+
+        for normalized, original in original_files.items():
+
+            # Find the original path from original_files.
+            if not self._is_test_file(normalized):
+                continue
+
+            if normalized in existing_paths:
+                continue
+
+            logger.warning(
+                "TEST PROTECTION: LLM omitted test file '%s'. "
+                "Restoring original test file.",
+                normalized,
+            )
+
+            protected_files.append(
+                (
+                    normalized,
+                    original,
+                )
+            )
+
+        return protected_files
+    # ==========================================================
+    # DUPLICATE FILE BLOCK PROTECTION
+    # ==========================================================
+
+    def _deduplicate_file_blocks(
+        self,
+        file_blocks: List[Tuple[str, str]],
+        original_files: Optional[Dict[str, str]] = None,
+    ) -> List[Tuple[str, str]]:
+        """
+        Remove accidental duplicate FILE blocks returned by the LLM.
+
+        Duplicate FILE blocks are common with LLM-generated repairs.
+
+        Rules:
+
+        1. First occurrence is normally preferred.
+        2. Identical duplicates are silently removed.
+        3. Conflicting duplicates are resolved deterministically.
+        4. If the original file exists, prefer the candidate closest
+        to the original source.
+        5. Critical configuration/dependency files are protected.
+        6. A duplicate FILE block must never reach validation.
+
+        This prevents errors such as:
+
+            FILE: requirements.txt
+            pytest
+
+            FILE: requirements.txt
+            pytest
+
+        and also:
+
+            FILE: requirements.txt
+            pytest
+
+            FILE: requirements.txt
+            pytest
+            requests
+
+        from causing the entire autonomous repair to fail.
+        """
+
+        original_files = original_files or {}
+
+        # ------------------------------------------------------
+        # Group files by normalized path
+        # ------------------------------------------------------
+
+        grouped: Dict[
+            str,
+            List[Tuple[str, str]]
+        ] = {}
+
+        for path, content in file_blocks:
+
+            normalized = self._normalize_path_key(
+                path
+            )
+
+            grouped.setdefault(
+                normalized,
+                []
+            ).append(
+                (
+                    path,
+                    content,
+                )
+            )
+
+        result: List[Tuple[str, str]] = []
+
+        # ------------------------------------------------------
+        # Resolve each path independently
+        # ------------------------------------------------------
+
+        for normalized, candidates in grouped.items():
+
+            # --------------------------------------------------
+            # Only one occurrence
+            # --------------------------------------------------
+
+            if len(candidates) == 1:
+
+                result.append(
+                    candidates[0]
+                )
+
+                continue
+
+            # --------------------------------------------------
+            # Multiple occurrences
+            # --------------------------------------------------
+
+            logger.warning(
+                "LLM returned %d FILE blocks for '%s'. "
+                "Resolving duplicates.",
+                len(candidates),
+                candidates[0][0],
+            )
+
+            # --------------------------------------------------
+            # Remove exact duplicates first
+            # --------------------------------------------------
+
+            unique_candidates: List[
+                Tuple[str, str]
+            ] = []
+
+            seen_contents = set()
+
+            for path, content in candidates:
+
+                content_key = content.strip()
+
+                if content_key in seen_contents:
+
+                    logger.warning(
+                        "Removing identical duplicate "
+                        "FILE block: %s",
+                        path,
+                    )
+
+                    continue
+
+                seen_contents.add(
+                    content_key
+                )
+
+                unique_candidates.append(
+                    (
+                        path,
+                        content,
+                    )
+                )
+
+            # --------------------------------------------------
+            # If everything was identical
+            # --------------------------------------------------
+
+            if len(unique_candidates) == 1:
+
+                result.append(
+                    unique_candidates[0]
+                )
+
+                continue
+
+            # --------------------------------------------------
+            # Original file
+            # --------------------------------------------------
+
+            original = original_files.get(
+                normalized
+            )
+
+            # --------------------------------------------------
+            # If original exists, choose the candidate that
+            # preserves the original structure/content best.
+            # --------------------------------------------------
+
+            if original is not None:
+
+                original_text = original.strip()
+
+                def similarity(
+                    candidate: str
+                ) -> float:
+
+                    candidate_text = (
+                        candidate.strip()
+                    )
+
+                    if not original_text:
+                        return 0.0
+
+                    # Exact match
+                    if candidate_text == original_text:
+                        return 1.0
+
+                    # Simple token overlap.
+                    # This is intentionally lightweight and
+                    # dependency-free.
+                    original_tokens = set(
+                        re.findall(
+                            r"\b[\w.-]+\b",
+                            original_text.lower(),
+                        )
+                    )
+
+                    candidate_tokens = set(
+                        re.findall(
+                            r"\b[\w.-]+\b",
+                            candidate_text.lower(),
+                        )
+                    )
+
+                    if not original_tokens:
+                        return 0.0
+
+                    intersection = (
+                        original_tokens
+                        & candidate_tokens
+                    )
+
+                    return (
+                        len(intersection)
+                        / len(original_tokens)
+                    )
+
+                ranked = sorted(
+                    unique_candidates,
+                    key=lambda item: similarity(
+                        item[1]
+                    ),
+                    reverse=True,
+                )
+
+                selected = ranked[0]
+
+                logger.warning(
+                    "Resolved conflicting duplicate "
+                    "FILE block '%s' using the candidate "
+                    "closest to the original source.",
+                    selected[0],
+                )
+
+                result.append(
+                    selected
+                )
+
+                continue
+
+            # --------------------------------------------------
+            # No original file exists.
+            #
+            # Prefer the largest complete candidate. This is
+            # generally safer than selecting a tiny/truncated
+            # LLM response.
+            # --------------------------------------------------
+
+            selected = max(
+                unique_candidates,
+                key=lambda item: len(
+                    item[1].strip()
+                ),
+            )
+
+            logger.warning(
+                "Resolved conflicting duplicate "
+                "FILE block '%s' by selecting the "
+                "most complete candidate.",
+                selected[0],
+            )
+
+            result.append(
+                selected
+            )
+
+        return result
 
     # ==========================================================
-    # PROMPT
-    # ==========================================================
-
-        # ==========================================================
     # PROMPT
     # ==========================================================
 
@@ -1550,6 +1883,48 @@ They are NOT source files.
 NEVER return runtime/debug artifacts.
 
 ==========================================================
+CRITICAL RULE — EACH FILE EXACTLY ONCE
+==========================================================
+
+Every original source file must appear EXACTLY ONE TIME
+in your response.
+
+Do NOT output the same FILE path more than once.
+
+For example, if the project contains:
+
+FILE: app.py
+
+FILE: requirements.txt
+
+FILE: tests/test_app.py
+
+then your response MUST contain exactly:
+
+FILE: app.py
+
+FILE: requirements.txt
+
+FILE: tests/test_app.py
+
+Do NOT return:
+
+FILE: requirements.txt
+...
+
+FILE: requirements.txt
+...
+
+Do NOT create duplicate FILE blocks.
+
+Do NOT provide multiple versions of the same file.
+
+If a file does not need changes, return its original complete
+contents exactly once.
+
+Each FILE path must be unique.
+
+==========================================================
 CURRENT SOURCE PROJECT
 ==========================================================
 
@@ -1770,9 +2145,6 @@ Return ONLY FILE blocks.
     ) -> None:
         """
         Save Fixer debugging information.
-
-        These files are diagnostic only and are never part of
-        the generated source project.
         """
 
         if not project_directory:
@@ -2099,9 +2471,28 @@ Return ONLY FILE blocks.
             )
 
         # ------------------------------------------------------
-        # Protect Python imports.
+        # Remove accidental duplicate FILE blocks returned by
+        # the LLM.
         #
-        # This is the important fix for your current failure.
+        # Identical duplicates are safe to remove.
+        # Conflicting duplicates are rejected.
+        # ------------------------------------------------------
+
+        file_blocks = (
+            self._deduplicate_file_blocks(
+                file_blocks,
+                original_files=original_files,
+            )
+        )
+
+        if not file_blocks:
+
+            raise RuntimeError(
+                "No valid FILE blocks remain after deduplication."
+            )
+
+        # ------------------------------------------------------
+        # Protect Python imports.
         # ------------------------------------------------------
 
         file_blocks = (
@@ -2110,6 +2501,52 @@ Return ONLY FILE blocks.
                 original_files,
             )
         )
+        
+        # ------------------------------------------------------
+        # Protect test files.
+        #
+        # Tests are source-of-truth files and must never be
+        # modified by the automatic repair agent.
+        # ------------------------------------------------------
+
+        file_blocks = (
+            self._restore_original_test_files(
+                file_blocks,
+                original_files,
+            )
+        )
+        # ------------------------------------------------------
+        # FINAL TEST IMMUTABILITY CHECK
+        # ------------------------------------------------------
+
+        for path, content in file_blocks:
+
+            normalized = self._normalize_path_key(path)
+
+            if not self._is_test_file(path):
+                continue
+
+            original = original_files.get(normalized)
+
+            if original is None:
+                continue
+
+            if content.strip() != original.strip():
+
+                logger.error(
+                    "TEST PROTECTION FAILED: test file '%s' "
+                    "still differs from original.",
+                    path,
+                )
+
+                raise RuntimeError(
+                    f"Protected test file was modified: {path}"
+                )
+
+            logger.info(
+                "TEST PROTECTION VERIFIED: '%s' unchanged.",
+                path,
+            )
 
         # ------------------------------------------------------
         # Rebuild response after import protection.
