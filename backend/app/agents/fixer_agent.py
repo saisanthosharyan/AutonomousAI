@@ -481,6 +481,41 @@ class FixerAgent(BaseAgent):
         return "\n\n".join(
             source_blocks
         )
+    
+    def _filter_generated_file_blocks(
+        self,
+        file_blocks: List[Tuple[str, str]],
+    ) -> List[Tuple[str, str]]:
+        """
+        Remove runtime/debug artifacts accidentally returned
+        by the LLM.
+
+        The LLM is instructed not to return these files, but this
+        method provides a final defensive boundary before validation.
+        """
+
+        filtered: List[Tuple[str, str]] = []
+
+        for path, content in file_blocks:
+
+            if self._is_runtime_artifact_path(path):
+
+                logger.warning(
+                    "FIXER OUTPUT PROTECTION: removing runtime/debug "
+                    "artifact returned by LLM: %s",
+                    path,
+                )
+
+                continue
+
+            filtered.append(
+                (
+                    path,
+                    content,
+                )
+            )
+
+        return filtered
 
     # ==========================================================
     # ORIGINAL FILES
@@ -1187,6 +1222,7 @@ class FixerAgent(BaseAgent):
                 f"Test file '{path}' lost required "
                 f"imports: {missing}"
             )
+
     # ==========================================================
     # TEST FILE CONTENT PROTECTION
     # ==========================================================
@@ -1314,6 +1350,50 @@ class FixerAgent(BaseAgent):
             )
 
         return protected_files
+
+    def _restore_missing_original_files(
+        self,
+        file_blocks: List[Tuple[str, str]],
+        original_files: Dict[str, str],
+    ) -> List[Tuple[str, str]]:
+        """
+        Restore original files that the LLM accidentally omitted.
+
+        The fixer may modify existing source files, but it must never
+        silently delete an existing file.
+        """
+
+        generated_keys = {
+            self._normalize_path_key(path)
+            for path, _ in file_blocks
+        }
+
+        restored = list(file_blocks)
+
+        for original_path, original_content in original_files.items():
+
+            if original_path in generated_keys:
+                continue
+
+            if self._is_runtime_artifact_path(original_path):
+                continue
+
+            logger.warning(
+                "SOURCE FILE PROTECTION: restoring omitted original "
+                "file '%s'.",
+                original_path,
+            )
+
+            restored.append(
+                (
+                    original_path,
+                    original_content,
+                )
+            )
+
+            generated_keys.add(original_path)
+
+        return restored
     # ==========================================================
     # DUPLICATE FILE BLOCK PROTECTION
     # ==========================================================
@@ -2490,6 +2570,26 @@ Return ONLY FILE blocks.
             raise RuntimeError(
                 "No valid FILE blocks remain after deduplication."
             )
+        # ------------------------------------------------------
+        # Remove runtime/debug artifacts accidentally generated
+        # by the LLM.
+        #
+        # The LLM is instructed not to return these files, but
+        # FixerAgent must enforce this independently.
+        # ------------------------------------------------------
+
+        file_blocks = (
+            self._filter_generated_file_blocks(
+                file_blocks
+            )
+        )
+
+        if not file_blocks:
+
+            raise RuntimeError(
+                "No source FILE blocks remain after removing "
+                "runtime/debug artifacts."
+            )
 
         # ------------------------------------------------------
         # Protect Python imports.
@@ -2501,7 +2601,7 @@ Return ONLY FILE blocks.
                 original_files,
             )
         )
-        
+
         # ------------------------------------------------------
         # Protect test files.
         #
@@ -2515,6 +2615,20 @@ Return ONLY FILE blocks.
                 original_files,
             )
         )
+
+        # ------------------------------------------------------
+        # Protect original source files.
+        #
+        # Restore any original file accidentally omitted by the LLM.
+        # ------------------------------------------------------
+
+        file_blocks = (
+            self._restore_missing_original_files(
+                file_blocks,
+                original_files,
+            )
+        )
+
         # ------------------------------------------------------
         # FINAL TEST IMMUTABILITY CHECK
         # ------------------------------------------------------
@@ -2763,6 +2877,15 @@ Return ONLY FILE blocks.
             )
 
         # ------------------------------------------------------
+        # Original source files
+        # ------------------------------------------------------
+
+        self._check_source_files_preserved(
+            seen,
+            original_files,
+        )
+
+        # ------------------------------------------------------
         # Critical files
         # ------------------------------------------------------
 
@@ -2779,6 +2902,51 @@ Return ONLY FILE blocks.
             project_type,
             seen,
             original_files,
+        )
+
+    # ==========================================================
+    # SOURCE FILE PRESERVATION
+    # ==========================================================
+
+    def _check_source_files_preserved(
+        self,
+        generated_keys: set,
+        original_files: Dict[str, str],
+    ) -> None:
+        """
+        Ensure every original source file is preserved.
+
+        The Fixer may create new files, but it must never silently
+        delete an existing source file.
+
+        Runtime/debug artifacts are already excluded from
+        original_files, so only real source files are checked.
+        """
+
+        missing_files = []
+
+        for original_key in original_files:
+
+            if original_key not in generated_keys:
+
+                missing_files.append(
+                    original_key
+                )
+
+        if not missing_files:
+            return
+
+        missing_files.sort()
+
+        logger.error(
+            "Repair removed %d original source file(s): %s",
+            len(missing_files),
+            ", ".join(missing_files),
+        )
+
+        raise RuntimeError(
+            "Repair removed original source file(s): "
+            + ", ".join(missing_files)
         )
 
     # ==========================================================
