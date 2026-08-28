@@ -1,6 +1,5 @@
-from pathlib import Path
-
 from app.core.logger import logger
+from app.project.project_analyzer import ProjectAnalyzer
 
 from app.services.testing.python_test_runner import PythonTestRunner
 from app.services.testing.node_test_runner import NodeTestRunner
@@ -10,10 +9,12 @@ from app.services.testing.cpp_test_runner import CPPTestRunner
 
 class TestManager:
     """
-    Detects the project type and runs the appropriate test runner.
+    Runs the appropriate test runner based on
+    the project type detected by ProjectAnalyzer.
     """
 
     def __init__(self):
+
         self.runners = {
             "python": PythonTestRunner(),
             "node": NodeTestRunner(),
@@ -21,46 +22,7 @@ class TestManager:
             "cpp": CPPTestRunner(),
         }
 
-    # --------------------------------------------------
-    # Detect Project Type
-    # --------------------------------------------------
-
-    def detect_project_type(self, project_path: str) -> str:
-
-        project = Path(project_path).resolve()
-
-        if not project.exists():
-            raise FileNotFoundError(
-                f"Project directory does not exist: {project}"
-            )
-
-        # Python
-        if (
-            (project / "requirements.txt").exists()
-            or (project / "pyproject.toml").exists()
-            or any(project.rglob("*.py"))
-        ):
-            logger.info("Detected Python project.")
-            return "python"
-
-        # Node.js
-        if (project / "package.json").exists():
-            logger.info("Detected Node.js project.")
-            return "node"
-
-        # Java
-        if any(project.rglob("*.java")):
-            logger.info("Detected Java project.")
-            return "java"
-
-        # C++
-        if any(project.rglob("*.cpp")):
-            logger.info("Detected C++ project.")
-            return "cpp"
-
-        logger.warning("Unable to detect project type.")
-
-        return "unknown"
+        self.project_analyzer = ProjectAnalyzer()
 
     # --------------------------------------------------
     # Run Tests
@@ -74,7 +36,9 @@ class TestManager:
 
         try:
 
-            project_type = self.detect_project_type(project_path)
+            project_type = self.project_analyzer.detect(
+                project_path
+            )
 
             logger.info(
                 f"Selected test runner: {project_type}"
@@ -85,7 +49,8 @@ class TestManager:
             if runner is None:
 
                 logger.warning(
-                    f"No supported test runner for '{project_type}' project."
+                    f"No supported test runner for "
+                    f"'{project_type}' project."
                 )
 
                 return {
@@ -116,7 +81,7 @@ class TestManager:
                 logger.error(
                     result.get(
                         "stderr",
-                        "No stderr available."
+                        "No stderr available.",
                     )
                 )
 

@@ -13,6 +13,7 @@ from app.services.execution.execution_manager import ExecutionManager
 from app.services.debugger.debug_manager import DebugManager
 from app.services.repair.repair_report import RepairReporter
 from app.memory.memory_manager import MemoryManager
+from app.project.project_analyzer import ProjectAnalyzer
 
 
 # ----------------------------------------------------------------------
@@ -128,6 +129,7 @@ class RetryManager:
         self.fixer = FixerAgent()
 
         self.memory = memory or MemoryManager()
+        self.project_analyzer = ProjectAnalyzer()
 
     async def execute_with_retry(
         self,
@@ -465,7 +467,9 @@ class RetryManager:
                     # This test is Python.
                     # In the production pipeline this should come
                     # from the detected project type if available.
-                    project_type="python",
+                    project_type=self.project_analyzer.detect(
+                        current_project["project_path"]
+                    ),
 
                     retry_history=repair_history,
 

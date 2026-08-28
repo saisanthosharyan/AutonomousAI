@@ -1,5 +1,7 @@
 from app.core.logger import logger
 
+from app.project.project_analyzer import ProjectAnalyzer
+
 from app.services.evaluator.project_checker import ProjectChecker
 from app.services.evaluator.quality_checker import QualityChecker
 from app.services.evaluator.documentation_checker import DocumentationChecker
@@ -22,16 +24,24 @@ class Evaluator:
 
     def __init__(self):
 
+        self.project_analyzer = ProjectAnalyzer()
+
         self.project_checker = ProjectChecker()
         self.quality_checker = QualityChecker()
         self.documentation_checker = DocumentationChecker()
-        self.execution_manager = ExecutionManager()
 
+        self.execution_manager = ExecutionManager(
+            analyzer=self.project_analyzer
+        )
+
+    # --------------------------------------------------
+    # Evaluate
     # --------------------------------------------------
 
     def evaluate(
         self,
         project_path: str,
+        execution_result: dict | None = None,
     ) -> dict:
 
         logger.info("=" * 60)
@@ -42,12 +52,13 @@ class Evaluator:
         # Detect Project Type
         # --------------------------------------------------
 
-        project_type = self.execution_manager.detect_project_type(
+        project_type = self.project_analyzer.detect(
             project_path
         )
 
         logger.info(
-            f"Detected project type: {project_type}"
+            "Detected project type: %s",
+            project_type,
         )
 
         # --------------------------------------------------
@@ -63,9 +74,23 @@ class Evaluator:
         # Execution
         # --------------------------------------------------
 
-        execution = self.execution_manager.run(
-            project_path
-        )
+        execution = execution_result
+
+        if execution is None:
+
+            logger.info(
+                "No execution result supplied. "
+                "Running project for evaluation."
+            )
+
+            execution = self.execution_manager.run(
+                project_path
+            )
+
+        if hasattr(execution, "to_dict"):
+            execution = execution.to_dict()
+
+        execution = execution or {}
 
         execution_score = (
             100
@@ -96,16 +121,13 @@ class Evaluator:
         # --------------------------------------------------
 
         overall_score = round(
-
             (
                 structure["score"]
                 + execution_score
                 + quality["score"]
                 + documentation["score"]
             )
-
             / 4
-
         )
 
         # --------------------------------------------------
@@ -137,7 +159,8 @@ class Evaluator:
             )
 
         logger.info(
-            f"Overall Evaluation Score: {overall_score}"
+            "Overall Evaluation Score: %s",
+            overall_score,
         )
 
         logger.info(
@@ -149,19 +172,11 @@ class Evaluator:
         logger.info("=" * 60)
 
         return {
-
             "overall_score": overall_score,
-
             "recommendation": recommendation,
-
             "project_type": project_type,
-
             "structure": structure,
-
             "execution": execution,
-
             "quality": quality,
-
             "documentation": documentation,
-
         }

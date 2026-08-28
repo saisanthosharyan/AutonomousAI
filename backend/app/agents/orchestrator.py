@@ -22,6 +22,7 @@ from app.services.testing.testing_manager import TestManager
 
 from app.websocket.manager import manager
 from app.memory.memory_manager import MemoryManager
+from app.services.evaluator.evaluator import Evaluator
 
 
 class AgentOrchestrator:
@@ -58,7 +59,7 @@ class AgentOrchestrator:
     later, do it as a single swap, not an addition.
     """
 
-    TOTAL_STEPS = 8
+    TOTAL_STEPS = 9
 
     def __init__(self) -> None:
         # One shared MemoryManager, created here and passed down to
@@ -78,6 +79,7 @@ class AgentOrchestrator:
             memory=self.memory
         )
         self.tester = TestManager()
+        self.evaluator = Evaluator()
 
     # ==========================================================
     # PROGRESS HELPER
@@ -316,6 +318,7 @@ class AgentOrchestrator:
         project: dict[str, Any] = {}
 
         execution_result: dict[str, Any] = {}
+        evaluation: dict[str, Any] = {}
         validation: dict[str, Any] = {}
         test_result: dict[str, Any] = {}
         review: dict[str, Any] = {}
@@ -331,7 +334,7 @@ class AgentOrchestrator:
         # ======================================================
 
         logger.info(
-            "Step 1/8 - Planning..."
+            "Step 1/9 - Planning..."
         )
 
         await self._progress(
@@ -378,7 +381,7 @@ class AgentOrchestrator:
         # ======================================================
 
         logger.info(
-            "Step 2/8 - Generating code..."
+            "Step 2/9 - Generating code..."
         )
 
         await self._progress(
@@ -425,7 +428,7 @@ class AgentOrchestrator:
         # ======================================================
 
         logger.info(
-            "Step 3/8 - Building project..."
+            "Step 3/9 - Building project..."
         )
 
         await self._progress(
@@ -483,7 +486,7 @@ class AgentOrchestrator:
         # ======================================================
 
         logger.info(
-            "Step 4/8 - Executing project..."
+            "Step 4/9 - Executing project..."
         )
 
         await self._progress(
@@ -587,7 +590,7 @@ class AgentOrchestrator:
         # failing doesn't cancel the others.
 
         logger.info(
-            "Steps 5-7/8 - Validating, testing, and reviewing "
+            "Steps 5-7/9 - Validating, testing, and reviewing "
             "(concurrently)..."
         )
 
@@ -629,19 +632,62 @@ class AgentOrchestrator:
             95,
             "Validation, testing, and review completed.",
         )
+        # ======================================================
+        # STEP 8 - EVALUATION
+        # ======================================================
+
+        logger.info(
+            "Step 8/9 - Evaluating final project..."
+        )
+
+        await self._progress(
+            session_id,
+            "Evaluation",
+            90,
+            "Evaluating final project...",
+        )
+
+        _stage_start = time.monotonic()
+
+        try:
+
+            evaluation = await asyncio.to_thread(
+                self.evaluator.evaluate,
+                project["project_path"],
+            )
+
+        except Exception as exc:
+
+            logger.exception(
+                "Project evaluation failed."
+            )
+
+            evaluation = {
+                "overall_score": 0,
+                "recommendation": "Evaluation failed.",
+                "error": str(exc),
+            }
+
+        stage_times["evaluation"] = (
+            time.monotonic() - _stage_start
+        )
+
+        logger.info(
+            "Project evaluation completed."
+        )
 
         # ======================================================
         # STEP 8 - SAVE PROJECT
         # ======================================================
 
         logger.info(
-            "Step 8/8 - Saving project..."
+            "Step 9/9 - Saving project..."
         )
 
         await self._progress(
             session_id,
             "Saving",
-            98,
+            95,
             "Saving project information...",
         )
 
@@ -734,6 +780,10 @@ class AgentOrchestrator:
 
         debug_report = (
             debug_report
+            or {}
+        )
+        evaluation = (
+            evaluation
             or {}
         )
 

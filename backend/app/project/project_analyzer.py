@@ -1,9 +1,10 @@
 from __future__ import annotations
-
+import json
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 from app.core.logger import logger
+
 
 
 class ProjectAnalyzer:
@@ -540,63 +541,94 @@ class ProjectAnalyzer:
 
         package = root / "package.json"
 
-        if package.exists():
+        if package.is_file():
 
             try:
 
-                text = package.read_text(
-                    encoding="utf-8",
-                    errors="ignore",
-                ).lower()
+                data = json.loads(
+                    package.read_text(
+                        encoding="utf-8",
+                        errors="ignore",
+                    )
+                )
 
-                if "next" in text:
+                dependencies = {}
+
+                dependencies.update(
+                    data.get("dependencies", {})
+                )
+
+                dependencies.update(
+                    data.get("devDependencies", {})
+                )
+
+                dependencies.update(
+                    data.get("peerDependencies", {})
+                )
+
+                if "next" in dependencies:
                     return "Next.js"
 
-                if "react" in text:
+                if "react" in dependencies:
                     return "React"
 
-                if "vue" in text:
+                if "vue" in dependencies:
                     return "Vue"
 
-                if "express" in text:
+                if "express" in dependencies:
                     return "Express"
 
-            except Exception:
-                pass
+            except (
+                json.JSONDecodeError,
+                OSError,
+                TypeError,
+                AttributeError,
+            ):
 
-        requirements = (
-            root / "requirements.txt"
-        )
+                logger.warning(
+                    "Unable to parse package.json for framework detection."
+                )
 
-        if requirements.exists():
+        python_dependency_files = [
+            root / "requirements.txt",
+            root / "pyproject.toml",
+            root / "Pipfile",
+            root / "poetry.lock",
+            root / "uv.lock",
+        ]
+
+        for dependency_file in python_dependency_files:
+
+            if not dependency_file.is_file():
+                continue
 
             try:
 
-                text = requirements.read_text(
+                text = dependency_file.read_text(
                     encoding="utf-8",
                     errors="ignore",
                 ).lower()
 
-                if "fastapi" in text:
-                    return "FastAPI"
+            except OSError:
 
-                if "django" in text:
-                    return "Django"
+                continue
 
-                if "flask" in text:
-                    return "Flask"
+            if "fastapi" in text:
+                return "FastAPI"
 
-                if "streamlit" in text:
-                    return "Streamlit"
+            if "django" in text:
+                return "Django"
 
-                if "gradio" in text:
-                    return "Gradio"
+            if "flask" in text:
+                return "Flask"
 
-            except Exception:
-                pass
+            if "streamlit" in text:
+                return "Streamlit"
+
+            if "gradio" in text:
+                return "Gradio"
 
         return "Unknown"
-
     # ==========================================================
     # DEPENDENCIES
     # ==========================================================
@@ -695,9 +727,7 @@ class ProjectAnalyzer:
                     )
                 )
 
-                return str(
-                    matches[0].relative_to(root)
-                )
+                return matches[0].relative_to(root).as_posix()
 
         return ""
 
