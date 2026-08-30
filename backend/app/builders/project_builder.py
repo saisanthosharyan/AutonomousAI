@@ -264,7 +264,7 @@ class ProjectBuilder:
         # ------------------------------------------------------
 
         pattern = re.compile(
-            r"^FILE:\s*(.*?)\n([\s\S]*?)(?=^FILE:|\Z)",
+            r"^FILE:\s*(.*?)(?:\n|\Z)([\s\S]*?)(?=^FILE:|\Z)",
             re.MULTILINE,
         )
 
@@ -438,7 +438,7 @@ class ProjectBuilder:
                 normalized_key
             )
 
-            # --------------------------------------------------
+           # --------------------------------------------------
             # Clean file content
             # --------------------------------------------------
 
@@ -446,15 +446,6 @@ class ProjectBuilder:
                 file_path,
                 content,
             )
-
-            if not content.strip():
-
-                logger.warning(
-                    f"Skipping empty file: "
-                    f"{file_path}"
-                )
-
-                continue
 
             # --------------------------------------------------
             # Destination

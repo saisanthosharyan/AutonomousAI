@@ -810,12 +810,6 @@ class AgentOrchestrator:
                     "success",
                     False,
                 )
-                # If the reviewer crashed, review.get("success")
-                # is explicitly False (see _failed_review). If it
-                # ran fine and its result shape doesn't include a
-                # "success" key at all, default to True so a
-                # reviewer whose output format doesn't carry a
-                # pass/fail flag doesn't sink the whole pipeline.
                 and review.get(
                     "success",
                     True,
@@ -837,6 +831,8 @@ class AgentOrchestrator:
             "retry_stats": retry_stats,
 
             "review": review,
+
+            "evaluation": evaluation,
 
             "improved_code": code,
 
