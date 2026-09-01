@@ -9,11 +9,21 @@ from app.core.logger import logger
 
 class CPPExecutor:
     """
-    Executes C++ projects by compiling and running
-    the first discovered .cpp source file.
+    Executes C++ projects by compiling discovered .cpp source files
+    and running the resulting executable.
     """
 
     EXECUTION_TIMEOUT = 60
+    COMPILE_TIMEOUT = 120
+
+    IGNORE_DIRS = {
+        "node_modules",
+        "build",
+        "dist",
+        "out",
+        "target",
+        ".git",
+    }
 
     def run(self, project_path: str) -> dict:
 
@@ -39,7 +49,7 @@ class CPPExecutor:
                 0,
             )
 
-        cpp_files = list(project.rglob("*.cpp"))
+        cpp_files = self._find_cpp_files(project)
 
         if not cpp_files:
             return self._result(
@@ -50,68 +60,109 @@ class CPPExecutor:
                 0,
             )
 
-        source = cpp_files[0]
+        logger.info("=" * 60)
+        logger.info("C++ Executor Started")
+        logger.info("=" * 60)
 
-        executable = (
+        logger.info("Found %d C++ source files.", len(cpp_files))
+
+        output_dir = project / "build"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        executable_name = (
             "program.exe"
             if os.name == "nt"
             else "program"
         )
 
-        logger.info("=" * 60)
-        logger.info("C++ Executor Started")
-        logger.info("=" * 60)
-
-        logger.info(f"Compiling: {source}")
+        executable = output_dir / executable_name
 
         try:
 
+            # -------------------------------------------------
+            # Compile all C++ source files
+            # -------------------------------------------------
+
+            logger.info("Compiling C++ project.")
+
+            compile_command = [
+                compiler,
+                *[str(source) for source in cpp_files],
+                "-o",
+                str(executable),
+            ]
+
+            logger.info(
+                "Compile command: %s",
+                " ".join(compile_command),
+            )
+
+            compile_start = time.perf_counter()
+
             compile_result = subprocess.run(
-                [
-                    compiler,
-                    source.name,
-                    "-o",
-                    executable,
-                ],
-                cwd=source.parent,
+                compile_command,
+                cwd=project,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=self.COMPILE_TIMEOUT,
             )
+
+            compile_time = round(
+                time.perf_counter() - compile_start,
+                2,
+            )
+
+            if compile_result.stdout:
+                logger.info(compile_result.stdout)
+
+            if compile_result.stderr:
+                logger.error(compile_result.stderr)
 
             if compile_result.returncode != 0:
 
-                logger.error("Compilation failed.")
+                logger.error(
+                    "C++ compilation failed with exit code %s.",
+                    compile_result.returncode,
+                )
 
                 return self._result(
                     False,
                     compile_result.stdout,
                     compile_result.stderr,
                     compile_result.returncode,
-                    0,
+                    compile_time,
                 )
 
-            logger.info("Compilation successful.")
-
-            command = (
-                executable
-                if os.name == "nt"
-                else f"./{executable}"
+            logger.info(
+                "Compilation successful in %s seconds.",
+                compile_time,
             )
 
-            logger.info(f"Running: {command}")
+            # -------------------------------------------------
+            # Execute compiled program
+            # -------------------------------------------------
 
-            start = time.time()
+            logger.info(
+                "Running executable: %s",
+                executable,
+            )
+
+            start = time.perf_counter()
 
             run_result = subprocess.run(
-                [command],
-                cwd=source.parent,
+                [str(executable)],
+                cwd=project,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=self.EXECUTION_TIMEOUT,
             )
 
             execution_time = round(
-                time.time() - start,
+                time.perf_counter() - start,
                 2,
             )
 
@@ -131,7 +182,7 @@ class CPPExecutor:
 
         except subprocess.TimeoutExpired:
 
-            logger.error("Execution timed out.")
+            logger.error("C++ execution timed out.")
 
             return self._result(
                 False,
@@ -158,6 +209,24 @@ class CPPExecutor:
             logger.info("=" * 60)
             logger.info("C++ Executor Finished")
             logger.info("=" * 60)
+
+    def _find_cpp_files(self, project: Path) -> list[Path]:
+
+        files = []
+
+        for file in project.rglob("*.cpp"):
+
+            relative_parts = file.relative_to(project).parts[:-1]
+
+            if any(
+                part in self.IGNORE_DIRS
+                for part in relative_parts
+            ):
+                continue
+
+            files.append(file)
+
+        return sorted(files)
 
     def _result(
         self,
