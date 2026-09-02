@@ -39,33 +39,36 @@ class AgentOrchestrator:
             ↓
         Project Builder
             ↓
-        Execution / Retry Manager (repairs internally via FixerAgent)
+        Execution / Retry Manager
             ↓
-        Validation / Testing / Review   (run concurrently)
+        Validation / Testing / Review
+            ↓
+        Evaluation
             ↓
         Database Save
             ↓
         Final Result
 
-    NOTE: FixManager (app/services/fixer/fix_manager.py) is
-    intentionally NOT used here. RetryManager already performs the
-    full self-healing loop (execute -> debug -> FixerAgent ->
-    ProjectBuilder.rebuild() -> re-execute). Running FixManager on
-    top of that would be a second, overlapping repair engine, and
-    its repair_project() return shape (a dict) doesn't match what
-    this orchestrator expects from a repair step, so wiring it in
-    here would silently no-op at best. If you want to replace
-    RetryManager's repair loop with FixManager's patch-based one
-    later, do it as a single swap, not an addition.
+    RetryManager already owns the self-healing loop:
+
+        Execute
+            ↓
+        Debug
+            ↓
+        FixerAgent
+            ↓
+        ProjectBuilder.rebuild()
+            ↓
+        Re-execute
+            ↓
+        Retry / Success
     """
 
     TOTAL_STEPS = 9
 
     def __init__(self) -> None:
-        # One shared MemoryManager, created here and passed down to
-        # every agent that reads/writes memory. If each agent
-        # creates its own MemoryManager() instance instead, memory
-        # never persists across the pipeline.
+        # One shared MemoryManager is passed to components that need
+        # shared project/review context.
         self.memory = MemoryManager()
 
         self.planner = PlannerAgent()
@@ -78,6 +81,7 @@ class AgentOrchestrator:
         self.retry_manager = RetryManager(
             memory=self.memory
         )
+
         self.tester = TestManager()
         self.evaluator = Evaluator()
 
@@ -95,7 +99,7 @@ class AgentOrchestrator:
         """
         Send websocket progress safely.
 
-        Failure to update the UI should never crash the
+        Failure to update the UI must never crash the
         AutoDev AI pipeline.
         """
 
@@ -134,11 +138,42 @@ class AgentOrchestrator:
     @staticmethod
     def _failed_review(
         error: str,
-    ) -> dict[str, Any]:
-        return {
-            "success": False,
-            "error": error,
-        }
+    ) -> str:
+        """
+        Reviewer failures are represented as strings because
+        ReviewerAgent.run() returns a review string.
+        """
+
+        return f"Reviewer Agent failed: {error}"
+
+    @staticmethod
+    def _review_succeeded(
+        review: str,
+    ) -> bool:
+        """
+        Determine whether the reviewer actually produced a
+        successful review.
+
+        Reviewer failures are represented as strings so the
+        response schema remains consistent. However, an error
+        string must not be considered a successful review merely
+        because it is non-empty.
+        """
+
+        if not isinstance(review, str):
+            return False
+
+        review = review.strip()
+
+        if not review:
+            return False
+
+        if review.startswith(
+            "Reviewer Agent failed:"
+        ):
+            return False
+
+        return True
 
     @staticmethod
     def _failed_validation(
@@ -161,22 +196,24 @@ class AgentOrchestrator:
         stage_times: dict[str, float],
     ):
         """
-        Await `coro`, recording its wall-clock duration under
-        stage_times[label]. Safe to run several of these concurrently
-        via asyncio.gather since each writes a distinct dict key and
-        the event loop is single-threaded.
+        Await a coroutine while recording its wall-clock duration.
+
+        Safe for concurrent asyncio.gather() execution because
+        each worker writes to a different stage_times key.
         """
 
         start = time.monotonic()
 
         result = await coro
 
-        stage_times[label] = time.monotonic() - start
+        stage_times[label] = (
+            time.monotonic() - start
+        )
 
         return result
 
     # ==========================================================
-    # CONCURRENT STAGE WORKERS (validation / testing / review)
+    # VALIDATION
     # ==========================================================
 
     async def _run_validation(
@@ -207,6 +244,10 @@ class AgentOrchestrator:
             return self._failed_validation(
                 str(exc)
             )
+
+    # ==========================================================
+    # TESTING
+    # ==========================================================
 
     async def _run_testing(
         self,
@@ -257,22 +298,25 @@ class AgentOrchestrator:
                 str(exc)
             )
 
+    # ==========================================================
+    # REVIEW
+    # ==========================================================
+
     async def _run_review(
         self,
         code: str,
-    ) -> dict[str, Any]:
+    ) -> str:
 
         try:
-            # ReviewerAgent.run() accepts (code, memory=...).
-            # Passing the orchestrator's shared MemoryManager here
-            # is what makes reviews persist and build on prior
-            # runs instead of starting from a blank memory store.
+            # ReviewerAgent.run() returns a string.
+            # Use the shared MemoryManager so the reviewer can
+            # use project/review context from the pipeline.
             review = await self.reviewer.run(
                 code,
                 memory=self.memory,
             )
 
-            review = review or {}
+            review = review or ""
 
             logger.info(
                 "AI review completed."
@@ -311,6 +355,7 @@ class AgentOrchestrator:
             )
 
         pipeline_start = time.monotonic()
+
         stage_times: dict[str, float] = {}
 
         plan: Task | None = None
@@ -321,12 +366,8 @@ class AgentOrchestrator:
         evaluation: dict[str, Any] = {}
         validation: dict[str, Any] = {}
         test_result: dict[str, Any] = {}
-        review: dict[str, Any] = {}
+        review: str = ""
         debug_report: dict[str, Any] = {}
-
-        # retry_stats must exist even if RetryManager raises before
-        # returning, otherwise the final "return" below would hit a
-        # NameError instead of just reporting an empty stats dict.
         retry_stats: dict[str, Any] = {}
 
         # ======================================================
@@ -344,7 +385,7 @@ class AgentOrchestrator:
             "Generating implementation plan...",
         )
 
-        _stage_start = time.monotonic()
+        stage_start = time.monotonic()
 
         try:
             plan = await self.planner.run(
@@ -358,7 +399,9 @@ class AgentOrchestrator:
             )
             raise
 
-        stage_times["planner"] = time.monotonic() - _stage_start
+        stage_times["planner"] = (
+            time.monotonic() - stage_start
+        )
 
         if plan is None:
             raise RuntimeError(
@@ -391,7 +434,7 @@ class AgentOrchestrator:
             "Generating source code...",
         )
 
-        _stage_start = time.monotonic()
+        stage_start = time.monotonic()
 
         try:
             code = await self.coder.run(
@@ -405,7 +448,9 @@ class AgentOrchestrator:
             )
             raise
 
-        stage_times["coder"] = time.monotonic() - _stage_start
+        stage_times["coder"] = (
+            time.monotonic() - stage_start
+        )
 
         if not code or not code.strip():
             raise RuntimeError(
@@ -438,7 +483,7 @@ class AgentOrchestrator:
             "Creating project structure...",
         )
 
-        _stage_start = time.monotonic()
+        stage_start = time.monotonic()
 
         try:
             project = self.builder.build(
@@ -452,7 +497,9 @@ class AgentOrchestrator:
             )
             raise
 
-        stage_times["builder"] = time.monotonic() - _stage_start
+        stage_times["builder"] = (
+            time.monotonic() - stage_start
+        )
 
         if not project:
             raise RuntimeError(
@@ -482,7 +529,7 @@ class AgentOrchestrator:
         )
 
         # ======================================================
-        # STEP 4 - EXECUTION (+ REPAIR VIA RETRY MANAGER)
+        # STEP 4 - EXECUTION + SELF-HEALING
         # ======================================================
 
         logger.info(
@@ -496,7 +543,7 @@ class AgentOrchestrator:
             "Executing generated project...",
         )
 
-        _stage_start = time.monotonic()
+        stage_start = time.monotonic()
 
         try:
             retry_result = (
@@ -525,12 +572,12 @@ class AgentOrchestrator:
 
             retry_result = None
 
-        stage_times["execution"] = time.monotonic() - _stage_start
+        stage_times["execution"] = (
+            time.monotonic() - stage_start
+        )
 
         if retry_result is not None:
 
-            # RetryManager.execute_with_retry() now returns a 5-tuple:
-            # (execution_result, project, code, debug_report, retry_stats)
             if not isinstance(
                 retry_result,
                 tuple,
@@ -551,18 +598,15 @@ class AgentOrchestrator:
             ) = retry_result
 
             execution_result = (
-                execution_result
-                or {}
+                execution_result or {}
             )
 
             debug_report = (
-                debug_report
-                or {}
+                debug_report or {}
             )
 
             retry_stats = (
-                retry_stats
-                or {}
+                retry_stats or {}
             )
 
         logger.info(
@@ -577,17 +621,16 @@ class AgentOrchestrator:
         )
 
         # ======================================================
-        # STEPS 5-7 - VALIDATION / TESTING / REVIEW (concurrent)
+        # STEPS 5-7 - VALIDATION / TESTING / REVIEW
         # ======================================================
         #
-        # None of these three depend on each other's output: validation
-        # only needs project_path, testing only needs execution_result,
-        # and review only needs the generated code. Running them with
-        # asyncio.gather instead of sequentially removes dead time
-        # where the pipeline is waiting on one blocking I/O-bound call
-        # (e.g. the reviewer's LLM round-trip) while the others sit
-        # idle. Each worker keeps its own try/except so one stage
-        # failing doesn't cancel the others.
+        # These stages are independent:
+        #
+        # Validation → project path
+        # Testing    → execution result + project path
+        # Review     → generated code
+        #
+        # Therefore they can run concurrently.
 
         logger.info(
             "Steps 5-7/9 - Validating, testing, and reviewing "
@@ -603,7 +646,9 @@ class AgentOrchestrator:
 
         validation, test_result, review = await asyncio.gather(
             self._timed(
-                self._run_validation(project["project_path"]),
+                self._run_validation(
+                    project["project_path"]
+                ),
                 "validation",
                 stage_times,
             ),
@@ -616,7 +661,9 @@ class AgentOrchestrator:
                 stage_times,
             ),
             self._timed(
-                self._run_review(code),
+                self._run_review(
+                    code
+                ),
                 "review",
                 stage_times,
             ),
@@ -624,14 +671,15 @@ class AgentOrchestrator:
 
         validation = validation or {}
         test_result = test_result or {}
-        review = review or {}
+        review = review or ""
 
         await self._progress(
             session_id,
             "Review",
-            95,
+            75,
             "Validation, testing, and review completed.",
         )
+
         # ======================================================
         # STEP 8 - EVALUATION
         # ======================================================
@@ -643,14 +691,13 @@ class AgentOrchestrator:
         await self._progress(
             session_id,
             "Evaluation",
-            90,
+            85,
             "Evaluating final project...",
         )
 
-        _stage_start = time.monotonic()
+        stage_start = time.monotonic()
 
         try:
-
             evaluation = await asyncio.to_thread(
                 self.evaluator.evaluate,
                 project["project_path"],
@@ -669,7 +716,7 @@ class AgentOrchestrator:
             }
 
         stage_times["evaluation"] = (
-            time.monotonic() - _stage_start
+            time.monotonic() - stage_start
         )
 
         logger.info(
@@ -677,7 +724,7 @@ class AgentOrchestrator:
         )
 
         # ======================================================
-        # STEP 8 - SAVE PROJECT
+        # STEP 9 - SAVE PROJECT
         # ======================================================
 
         logger.info(
@@ -691,19 +738,11 @@ class AgentOrchestrator:
             "Saving project information...",
         )
 
-        _stage_start = time.monotonic()
+        stage_start = time.monotonic()
 
         db = SessionLocal()
 
         try:
-
-            # NOTE: review / validation / retry_stats / execution are
-            # not persisted here yet -- create_project()'s current
-            # signature only accepts the fields below. Storing the
-            # rest requires extending the project DB schema/CRUD layer
-            # first (new columns or a JSON blob column), which is out
-            # of scope for this file. Once that's done, pass them
-            # through here the same way project_path/zip_path are.
             create_project(
                 db=db,
                 session_id=session_id or "default",
@@ -723,17 +762,17 @@ class AgentOrchestrator:
 
         except Exception:
 
-            # Database failure should not destroy
-            # the generated project.
+            # Database failure must not destroy the generated project.
             logger.exception(
                 "Failed to save project to database."
             )
 
         finally:
-
             db.close()
 
-        stage_times["save"] = time.monotonic() - _stage_start
+        stage_times["save"] = (
+            time.monotonic() - stage_start
+        )
 
         # ======================================================
         # COMPLETED
@@ -746,55 +785,52 @@ class AgentOrchestrator:
             "Project generation completed.",
         )
 
-        pipeline_time = time.monotonic() - pipeline_start
+        pipeline_time = (
+            time.monotonic() - pipeline_start
+        )
 
         logger.info("=" * 60)
         logger.info(
-            f"AutoDev AI Pipeline Finished in {pipeline_time:.2f}s"
+            f"AutoDev AI Pipeline Finished in "
+            f"{pipeline_time:.2f}s"
         )
         logger.info("=" * 60)
 
-        # ------------------------------------------------------
-        # Normalize results
-        # ------------------------------------------------------
+        # ======================================================
+        # NORMALIZE RESULTS
+        # ======================================================
 
         execution_result = (
-            execution_result
-            or {}
+            execution_result or {}
         )
 
         validation = (
-            validation
-            or {}
+            validation or {}
         )
 
         test_result = (
-            test_result
-            or {}
+            test_result or {}
         )
 
         review = (
-            review
-            or {}
+            review or ""
         )
 
         debug_report = (
-            debug_report
-            or {}
+            debug_report or {}
         )
+
         evaluation = (
-            evaluation
-            or {}
+            evaluation or {}
         )
 
         retry_stats = (
-            retry_stats
-            or {}
+            retry_stats or {}
         )
 
-        # ------------------------------------------------------
-        # Final result
-        # ------------------------------------------------------
+        # ======================================================
+        # FINAL RESULT
+        # ======================================================
 
         return {
             "success": bool(
@@ -810,9 +846,8 @@ class AgentOrchestrator:
                     "success",
                     False,
                 )
-                and review.get(
-                    "success",
-                    True,
+                and self._review_succeeded(
+                    review
                 )
             ),
 

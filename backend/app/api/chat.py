@@ -93,35 +93,23 @@ async def chat(request: ChatRequest):
         # ------------------------------------------
 
         return {
-
-            "success": True,
-
+            "success": result.get("success", False),
             "session_id": request.session_id,
-
-            "history": get_history(
-                request.session_id
-            ),
-
+            "history": get_history(request.session_id),
             "plan": result.get("plan"),
-
             "project": {
                 **project,
                 "download_url": download_url,
             },
-
             "execution": result.get("execution"),
-
             "validation": result.get("validation"),
-
             "tests": result.get("tests"),
-
             "debug_report": result.get("debug_report"),
-
+            "retry_stats": result.get("retry_stats"),
             "review": result.get("review"),
-
-            # Remove this if you don't want to send
-            # the full generated code to the frontend.
+            "evaluation": result.get("evaluation"),
             "improved_code": result.get("improved_code"),
+            "metrics": result.get("metrics"),
         }
 
     except HTTPException:

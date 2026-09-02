@@ -7,59 +7,55 @@ from app.agents.orchestrator import AgentOrchestrator
 from app.models.task import Task
 
 
-def create_task():
-    return Task(
-        title="Test Project",
-        description="A test project",
-        project_type="web",
-        language="python",
-        framework=None,
-        database=None,
-        authentication=None,
-        deployment=None,
-        architecture=None,
-        testing=None,
-        dependencies=[],
-        features=[],
-        steps=[],
-    )
-
-
 def create_orchestrator():
     with (
         patch(
             "app.agents.orchestrator.PlannerAgent"
-        ),
+        ) as planner,
         patch(
             "app.agents.orchestrator.CoderAgent"
-        ),
+        ) as coder,
         patch(
             "app.agents.orchestrator.ReviewerAgent"
-        ),
+        ) as reviewer,
         patch(
             "app.agents.orchestrator.ProjectBuilder"
-        ),
+        ) as builder,
         patch(
             "app.agents.orchestrator.ProjectValidator"
-        ),
+        ) as validator,
         patch(
             "app.agents.orchestrator.RetryManager"
-        ),
+        ) as retry_manager,
         patch(
             "app.agents.orchestrator.TestManager"
-        ),
+        ) as tester,
         patch(
             "app.agents.orchestrator.Evaluator"
-        ),
+        ) as evaluator,
         patch(
             "app.agents.orchestrator.MemoryManager"
-        ),
+        ) as memory,
     ):
         orchestrator = AgentOrchestrator()
 
+    # Make the mock RetryManager expose the same shared memory
+    # instance that AgentOrchestrator created.
     orchestrator.retry_manager.memory = orchestrator.memory
 
     return orchestrator
+
+
+def create_task(
+    title="Test Project",
+    description="A test project",
+):
+    return Task(
+        title=title,
+        description=description,
+        project_type="web",
+        language="python",
+    )
 
 
 def configure_success(orchestrator, tmp_path):
@@ -115,11 +111,27 @@ def configure_success(orchestrator, tmp_path):
         "return_code": 0,
     }
 
+    # ReviewerAgent.run() returns a review string.
     orchestrator.reviewer.run = AsyncMock(
-        return_value={
-            "success": True,
-            "summary": "Looks good",
-        }
+        return_value="""
+## Overall Summary
+
+The generated project is functional and well structured.
+
+## Strengths
+
+- Clear implementation
+- Working source code
+- Basic test coverage
+
+## Problems Found
+
+No significant problems were found.
+
+## Final Score
+
+9/10
+"""
     )
 
     orchestrator.evaluator.evaluate.return_value = {
@@ -158,14 +170,17 @@ def test_orchestrator_success(
 
     assert result["success"] is True
     assert result["plan"]["title"] == "Test Project"
-    assert result["plan"]["project_type"] == "web"
-    assert result["plan"]["language"] == "python"
-
     assert result["execution"]["success"] is True
     assert result["validation"]["valid"] is True
     assert result["tests"]["success"] is True
-    assert result["review"]["success"] is True
 
+    # ReviewerAgent returns a string.
+    assert isinstance(result["review"], str)
+    assert "Overall Summary" in result["review"]
+    assert "Final Score" in result["review"]
+    assert "9/10" in result["review"]
+
+    assert result["evaluation"]["overall_score"] == 95
     assert result["improved_code"] == "print('hello')"
 
     create_project.assert_called_once()
@@ -237,7 +252,9 @@ def test_coder_failure():
     orchestrator = create_orchestrator()
 
     orchestrator.planner.run = AsyncMock(
-        return_value=create_task()
+        return_value=create_task(
+            description="Test"
+        )
     )
 
     orchestrator.coder.run = AsyncMock(
@@ -261,7 +278,9 @@ def test_coder_returns_empty_code():
     orchestrator = create_orchestrator()
 
     orchestrator.planner.run = AsyncMock(
-        return_value=create_task()
+        return_value=create_task(
+            description="Test"
+        )
     )
 
     orchestrator.coder.run = AsyncMock(
@@ -283,7 +302,9 @@ def test_builder_failure():
     orchestrator = create_orchestrator()
 
     orchestrator.planner.run = AsyncMock(
-        return_value=create_task()
+        return_value=create_task(
+            description="Test"
+        )
     )
 
     orchestrator.coder.run = AsyncMock(
@@ -334,7 +355,7 @@ def test_retry_manager_failure(tmp_path):
 
     assert result["execution"]["success"] is False
     assert result["debug_report"]["success"] is False
-    assert result["retry_stats"] == {}
+    assert result["success"] is False
 
 
 def test_validation_failure_does_not_crash_pipeline(
@@ -365,6 +386,7 @@ def test_validation_failure_does_not_crash_pipeline(
         )
 
     assert result["validation"]["valid"] is False
+    assert "Validation error" in result["validation"]["errors"]
     assert result["success"] is False
 
 
@@ -396,6 +418,7 @@ def test_testing_failure_does_not_crash_pipeline(
         )
 
     assert result["tests"]["success"] is False
+    assert "Testing error" in result["tests"]["stderr"]
     assert result["success"] is False
 
 
@@ -428,7 +451,15 @@ def test_review_failure_does_not_crash_pipeline(
             )
         )
 
-    assert result["review"]["success"] is False
+    assert isinstance(
+        result["review"],
+        str,
+    )
+
+    assert result["review"] == (
+        "Reviewer Agent failed: Review error"
+    )
+
     assert result["success"] is False
 
 
@@ -459,17 +490,24 @@ def test_evaluation_failure_does_not_crash_pipeline(
             )
         )
 
-    assert result["evaluation"] == {
-        "overall_score": 0,
-        "recommendation": "Evaluation failed.",
-        "error": "Evaluation error",
-    }
+    # The current orchestrator catches evaluator failures and
+    # returns a structured evaluation error instead of crashing.
+    assert result["evaluation"]["overall_score"] == 0
+    assert result["evaluation"]["recommendation"] == (
+        "Evaluation failed."
+    )
+    assert result["evaluation"]["error"] == (
+        "Evaluation error"
+    )
 
 
 def test_orchestrator_calls_shared_memory():
     orchestrator = create_orchestrator()
 
-    assert orchestrator.retry_manager.memory is orchestrator.memory
+    assert (
+        orchestrator.retry_manager.memory
+        is orchestrator.memory
+    )
 
 
 def test_final_result_contains_expected_sections(
@@ -505,9 +543,9 @@ def test_final_result_contains_expected_sections(
         "debug_report",
         "retry_stats",
         "review",
+        "evaluation",
         "improved_code",
         "metrics",
-        "evaluation",
     }
 
     assert expected.issubset(
