@@ -4,6 +4,19 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.api import chat as chat_module
+from app.database.database import Base, engine
+
+
+# --------------------------------------------------
+# Test Database Setup
+# --------------------------------------------------
+
+Base.metadata.create_all(bind=engine)
+
+
+# --------------------------------------------------
+# Chat Success
+# --------------------------------------------------
 
 
 def test_chat_success(monkeypatch, tmp_path):
@@ -14,12 +27,17 @@ def test_chat_success(monkeypatch, tmp_path):
         "success": True,
         "plan": {
             "goal": "Create a hello world application",
-            "steps": ["Create main file", "Run application"],
+            "steps": [
+                "Create main file",
+                "Run application",
+            ],
         },
         "project": {
             "project_path": str(project_dir),
             "project_name": "generated-project",
-            "zip_path": str(tmp_path / "generated-project.zip"),
+            "zip_path": str(
+                tmp_path / "generated-project.zip"
+            ),
         },
         "execution": {
             "success": True,
@@ -52,6 +70,7 @@ def test_chat_success(monkeypatch, tmp_path):
     }
 
     fake_orchestrator = AsyncMock()
+
     fake_orchestrator.execute.return_value = fake_result
 
     monkeypatch.setattr(
@@ -66,14 +85,20 @@ def test_chat_success(monkeypatch, tmp_path):
         lambda session_id: [
             {
                 "role": "user",
-                "content": "Create a hello world application",
+                "content": (
+                    "Create a hello world application"
+                ),
             }
         ],
     )
 
     added_messages = []
 
-    def fake_add_message(session_id, role, content):
+    def fake_add_message(
+        session_id,
+        role,
+        content,
+    ):
         added_messages.append(
             {
                 "session_id": session_id,
@@ -94,57 +119,178 @@ def test_chat_success(monkeypatch, tmp_path):
         "/chat",
         json={
             "session_id": "test-session",
-            "message": "Create a hello world application",
+            "message": (
+                "Create a hello world application"
+            ),
         },
     )
+
+    # ------------------------------------------
+    # HTTP Response
+    # ------------------------------------------
 
     assert response.status_code == 200
 
     data = response.json()
 
+    # ------------------------------------------
+    # Basic Response
+    # ------------------------------------------
+
     assert data["success"] is True
     assert data["session_id"] == "test-session"
 
-    assert data["plan"]["goal"] == "Create a hello world application"
+    # ------------------------------------------
+    # Run ID
+    # ------------------------------------------
 
-    assert data["project"]["project_name"] == "generated-project"
+    assert "run_id" in data
+    assert data["run_id"]
+    assert isinstance(data["run_id"], str)
+
+    # ------------------------------------------
+    # Plan
+    # ------------------------------------------
+
+    assert (
+        data["plan"]["goal"]
+        == "Create a hello world application"
+    )
+
+    # ------------------------------------------
+    # Project
+    # ------------------------------------------
+
+    assert (
+        data["project"]["project_name"]
+        == "generated-project"
+    )
+
     assert (
         data["project"]["download_url"]
         == "/download/generated-project"
     )
 
+    # ------------------------------------------
+    # Execution
+    # ------------------------------------------
+
     assert data["execution"]["success"] is True
-    assert data["execution"]["stdout"] == "Hello World"
+
+    assert (
+        data["execution"]["stdout"]
+        == "Hello World"
+    )
+
+    # ------------------------------------------
+    # Validation
+    # ------------------------------------------
 
     assert data["validation"]["valid"] is True
-    assert data["tests"]["success"] is True
-    assert data["review"] == "The project looks good."
 
-    assert data["retry_stats"]["total_attempts"] == 1
-    assert data["evaluation"]["score"] == 0.9
-    assert data["metrics"]["total_duration"] == 1.0
+    # ------------------------------------------
+    # Tests
+    # ------------------------------------------
+
+    assert data["tests"]["success"] is True
+
+    # ------------------------------------------
+    # Review
+    # ------------------------------------------
+
+    assert (
+        data["review"]
+        == "The project looks good."
+    )
+
+    # ------------------------------------------
+    # Retry Stats
+    # ------------------------------------------
+
+    assert (
+        data["retry_stats"]["total_attempts"]
+        == 1
+    )
+
+    assert (
+        data["retry_stats"]["successful"]
+        is True
+    )
+
+    # ------------------------------------------
+    # Evaluation
+    # ------------------------------------------
+
+    assert (
+        data["evaluation"]["score"]
+        == 0.9
+    )
+
+    # ------------------------------------------
+    # Metrics
+    # ------------------------------------------
+
+    assert (
+        data["metrics"]["total_duration"]
+        == 1.0
+    )
+
+    # ------------------------------------------
+    # Orchestrator
+    # ------------------------------------------
 
     fake_orchestrator.execute.assert_awaited_once()
 
-    call_kwargs = fake_orchestrator.execute.await_args.kwargs
+    call_kwargs = (
+        fake_orchestrator
+        .execute
+        .await_args
+        .kwargs
+    )
 
-    assert call_kwargs["task"] == "Create a hello world application"
-    assert call_kwargs["session_id"] == "test-session"
+    assert (
+        call_kwargs["task"]
+        == "Create a hello world application"
+    )
+
+    assert (
+        call_kwargs["session_id"]
+        == "test-session"
+    )
+
+    assert (
+        call_kwargs["run_id"]
+        == data["run_id"]
+    )
+
+    # ------------------------------------------
+    # Conversation Messages
+    # ------------------------------------------
 
     assert added_messages[0]["role"] == "user"
+
     assert (
         added_messages[0]["content"]
         == "Create a hello world application"
     )
 
     assert added_messages[-1]["role"] == "assistant"
+
     assert (
         added_messages[-1]["content"]
         == "The project looks good."
     )
 
 
-def test_chat_failed_pipeline(monkeypatch, tmp_path):
+# --------------------------------------------------
+# Chat Failed Pipeline
+# --------------------------------------------------
+
+
+def test_chat_failed_pipeline(
+    monkeypatch,
+    tmp_path,
+):
     project_dir = tmp_path / "failed-project"
     project_dir.mkdir()
 
@@ -152,22 +298,31 @@ def test_chat_failed_pipeline(monkeypatch, tmp_path):
         "success": False,
         "plan": {
             "goal": "Create an application",
-            "steps": ["Create files", "Run tests"],
+            "steps": [
+                "Create files",
+                "Run tests",
+            ],
         },
         "project": {
             "project_path": str(project_dir),
             "project_name": "failed-project",
-            "zip_path": str(tmp_path / "failed-project.zip"),
+            "zip_path": str(
+                tmp_path / "failed-project.zip"
+            ),
         },
         "execution": {
             "success": False,
             "stdout": "",
-            "stderr": "RuntimeError: application failed",
+            "stderr": (
+                "RuntimeError: application failed"
+            ),
             "return_code": 1,
         },
         "validation": {
             "valid": False,
-            "errors": ["Validation failed"],
+            "errors": [
+                "Validation failed",
+            ],
         },
         "tests": {
             "success": False,
@@ -181,7 +336,9 @@ def test_chat_failed_pipeline(monkeypatch, tmp_path):
             "total_attempts": 3,
             "successful": False,
         },
-        "review": "The project requires fixes.",
+        "review": (
+            "The project requires fixes."
+        ),
         "evaluation": {
             "score": 0.2,
         },
@@ -192,7 +349,10 @@ def test_chat_failed_pipeline(monkeypatch, tmp_path):
     }
 
     fake_orchestrator = AsyncMock()
-    fake_orchestrator.execute.return_value = fake_result
+
+    fake_orchestrator.execute.return_value = (
+        fake_result
+    )
 
     monkeypatch.setattr(
         chat_module,
@@ -222,27 +382,109 @@ def test_chat_failed_pipeline(monkeypatch, tmp_path):
         },
     )
 
+    # ------------------------------------------
+    # HTTP Response
+    # ------------------------------------------
+
     assert response.status_code == 200
 
     data = response.json()
 
+    # ------------------------------------------
+    # Basic Result
+    # ------------------------------------------
+
     assert data["success"] is False
 
-    assert data["execution"]["success"] is False
-    assert data["validation"]["valid"] is False
-    assert data["tests"]["success"] is False
+    # ------------------------------------------
+    # Run ID
+    # ------------------------------------------
 
-    assert data["retry_stats"]["total_attempts"] == 3
-    assert data["retry_stats"]["successful"] is False
+    assert "run_id" in data
+    assert data["run_id"]
+    assert isinstance(data["run_id"], str)
 
-    assert data["evaluation"]["score"] == 0.2
+    # ------------------------------------------
+    # Execution
+    # ------------------------------------------
+
+    assert (
+        data["execution"]["success"]
+        is False
+    )
+
+    # ------------------------------------------
+    # Validation
+    # ------------------------------------------
+
+    assert (
+        data["validation"]["valid"]
+        is False
+    )
+
+    # ------------------------------------------
+    # Tests
+    # ------------------------------------------
+
+    assert (
+        data["tests"]["success"]
+        is False
+    )
+
+    # ------------------------------------------
+    # Retry Stats
+    # ------------------------------------------
+
+    assert (
+        data["retry_stats"]["total_attempts"]
+        == 3
+    )
+
+    assert (
+        data["retry_stats"]["successful"]
+        is False
+    )
+
+    # ------------------------------------------
+    # Evaluation
+    # ------------------------------------------
+
+    assert (
+        data["evaluation"]["score"]
+        == 0.2
+    )
+
+    # ------------------------------------------
+    # Orchestrator
+    # ------------------------------------------
+
+    fake_orchestrator.execute.assert_awaited_once()
+
+    call_kwargs = (
+        fake_orchestrator
+        .execute
+        .await_args
+        .kwargs
+    )
+
+    assert (
+        call_kwargs["run_id"]
+        == data["run_id"]
+    )
 
 
-def test_chat_orchestrator_failure(monkeypatch):
+# --------------------------------------------------
+# Chat Orchestrator Failure
+# --------------------------------------------------
+
+
+def test_chat_orchestrator_failure(
+    monkeypatch,
+):
     fake_orchestrator = AsyncMock()
 
-    fake_orchestrator.execute.side_effect = RuntimeError(
-        "Orchestrator failed"
+    fake_orchestrator.execute.side_effect = (
+        RuntimeError("Orchestrator failed")
     )
 
     monkeypatch.setattr(
@@ -273,17 +515,65 @@ def test_chat_orchestrator_failure(monkeypatch):
         },
     )
 
+    # ------------------------------------------
+    # HTTP Response
+    # ------------------------------------------
+
     assert response.status_code == 500
 
     data = response.json()
 
-    assert data["detail"]["success"] is False
-    assert data["detail"]["message"] == "Orchestrator failed"
+    # ------------------------------------------
+    # Error
+    # ------------------------------------------
+
+    assert (
+        data["detail"]["success"]
+        is False
+    )
+
+    assert (
+        data["detail"]["message"]
+        == "Orchestrator failed"
+    )
+
+    # ------------------------------------------
+    # Orchestrator
+    # ------------------------------------------
+
+    fake_orchestrator.execute.assert_awaited_once()
+
+    call_kwargs = (
+        fake_orchestrator
+        .execute
+        .await_args
+        .kwargs
+    )
+
+    assert (
+        call_kwargs["task"]
+        == "Build an application"
+    )
+
+    assert (
+        call_kwargs["session_id"]
+        == "test-session"
+    )
+
+    assert (
+        call_kwargs["run_id"]
+    )
+
+
+# --------------------------------------------------
+# Chat Validation
+# --------------------------------------------------
 
 
 def test_chat_validation():
     client = TestClient(app)
 
+    # Empty session ID
     response = client.post(
         "/chat",
         json={
@@ -294,6 +584,7 @@ def test_chat_validation():
 
     assert response.status_code == 422
 
+    # Empty message
     response = client.post(
         "/chat",
         json={

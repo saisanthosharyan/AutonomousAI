@@ -1,3 +1,4 @@
+import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -5,6 +6,8 @@ from pydantic import BaseModel, Field
 
 from app.agents.orchestrator import AgentOrchestrator
 from app.core.logger import logger
+from app.database.crud import create_run
+from app.database.database import SessionLocal
 from app.memory.conversation_cache import (
     add_message,
     get_history,
@@ -17,6 +20,7 @@ router = APIRouter(tags=["Chat"])
 # Request Model
 # --------------------------------------------------
 
+
 class ChatRequest(BaseModel):
     session_id: str = Field(..., min_length=1)
     message: str = Field(..., min_length=1)
@@ -25,6 +29,7 @@ class ChatRequest(BaseModel):
 # --------------------------------------------------
 # Chat Endpoint
 # --------------------------------------------------
+
 
 @router.post("/chat")
 async def chat(request: ChatRequest):
@@ -48,6 +53,29 @@ async def chat(request: ChatRequest):
         )
 
         # ------------------------------------------
+        # Create Persistent Run
+        # ------------------------------------------
+
+        run_id = str(uuid.uuid4())
+
+        db = SessionLocal()
+
+        try:
+
+            create_run(
+                db=db,
+                run_id=run_id,
+                session_id=request.session_id,
+                prompt=request.message,
+            )
+
+        finally:
+
+            db.close()
+
+        logger.info(f"Created AutoDev-AI run: {run_id}")
+
+        # ------------------------------------------
         # Execute AI Pipeline
         # ------------------------------------------
 
@@ -57,6 +85,7 @@ async def chat(request: ChatRequest):
             task=request.message,
             history=history,
             session_id=request.session_id,
+            run_id=run_id,
         )
 
         # ------------------------------------------
@@ -86,7 +115,9 @@ async def chat(request: ChatRequest):
                 f"/download/{Path(project['project_path']).name}"
             )
 
-        logger.info("Chat request completed successfully.")
+        logger.info(
+            f"Chat request completed successfully: {run_id}"
+        )
 
         # ------------------------------------------
         # Response
@@ -95,6 +126,7 @@ async def chat(request: ChatRequest):
         return {
             "success": result.get("success", False),
             "session_id": request.session_id,
+            "run_id": run_id,
             "history": get_history(request.session_id),
             "plan": result.get("plan"),
             "project": {

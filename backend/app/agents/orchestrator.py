@@ -23,7 +23,7 @@ from app.services.testing.testing_manager import TestManager
 from app.websocket.manager import manager
 from app.memory.memory_manager import MemoryManager
 from app.services.evaluator.evaluator import Evaluator
-
+from app.services.run.run_manager import RunManager
 
 class AgentOrchestrator:
     """
@@ -95,18 +95,51 @@ class AgentOrchestrator:
         step: str,
         progress: int,
         message: str,
+        run_id: str | None = None,
     ) -> None:
         """
-        Send websocket progress safely.
+        Persist and broadcast pipeline progress.
 
-        Failure to update the UI must never crash the
-        AutoDev AI pipeline.
+        Run persistence must never crash the pipeline.
+        WebSocket failures must also never crash the pipeline.
         """
+
+        # ------------------------------------------
+        # Persist run state
+        # ------------------------------------------
+
+        if run_id:
+
+            try:
+                await asyncio.to_thread(
+                    RunManager.update,
+                    run_id,
+                    status=(
+                        "completed"
+                        if progress >= 100
+                        else "running"
+                    ),
+                    current_step=step,
+                    progress=progress,
+                    message=message,
+                    started=True,
+                    completed=progress >= 100,
+                )
+
+            except Exception:
+                logger.exception(
+                    "Failed to persist run progress."
+                )
+
+        # ------------------------------------------
+        # Send WebSocket progress
+        # ------------------------------------------
 
         if not session_id:
             return
 
         try:
+
             await manager.send_progress(
                 session_id=session_id,
                 step=step,
@@ -118,6 +151,73 @@ class AgentOrchestrator:
             logger.exception(
                 "Failed to send websocket progress."
             )
+
+    # ==========================================================
+    # RUN LIFECYCLE HELPERS
+    # ==========================================================
+
+    async def _update_run(
+        self,
+        run_id: str | None,
+        *,
+        status: str | None = None,
+        current_step: str | None = None,
+        progress: int | None = None,
+        message: str | None = None,
+        result: dict[str, Any] | None = None,
+        error: str | None = None,
+        started: bool = False,
+        completed: bool = False,
+    ) -> None:
+        """
+        Safely persist run lifecycle state.
+
+        Run persistence must never crash the autonomous
+        engineering pipeline.
+        """
+
+        if not run_id:
+            return
+
+        try:
+
+            await asyncio.to_thread(
+                RunManager.update,
+                run_id,
+                status=status,
+                current_step=current_step,
+                progress=progress,
+                message=message,
+                result=result,
+                error=error,
+                started=started,
+                completed=completed,
+            )
+
+        except Exception:
+            logger.exception(
+                "Failed to update run state."
+            )
+
+    async def _fail_run(
+        self,
+        run_id: str | None,
+        error: str,
+    ) -> None:
+        """
+        Mark a run as failed without allowing database
+        persistence errors to affect the original failure.
+        """
+
+        await self._update_run(
+            run_id,
+            status="failed",
+            current_step="Failed",
+            progress=100,
+            message="AutoDev-AI pipeline failed.",
+            error=error,
+            completed=True,
+        )
 
     # ==========================================================
     # DEFAULT RESULT HELPERS
@@ -343,6 +443,7 @@ class AgentOrchestrator:
         task: str,
         history: list | None = None,
         session_id: str | None = None,
+        run_id: str | None = None,
     ) -> dict[str, Any]:
 
         logger.info("=" * 60)
@@ -355,6 +456,15 @@ class AgentOrchestrator:
             )
 
         pipeline_start = time.monotonic()
+
+        await self._update_run(
+            run_id,
+            status="running",
+            current_step="Starting",
+            progress=0,
+            message="AutoDev-AI pipeline started.",
+            started=True,
+        )
 
         stage_times: dict[str, float] = {}
 
@@ -383,6 +493,7 @@ class AgentOrchestrator:
             "Planning",
             10,
             "Generating implementation plan...",
+            run_id,
         )
 
         stage_start = time.monotonic()
@@ -393,10 +504,16 @@ class AgentOrchestrator:
                 history,
             )
 
-        except Exception:
+        except Exception as exc:
             logger.exception(
                 "Planner Agent failed."
             )
+
+            await self._fail_run(
+                run_id,
+                str(exc),
+            )
+
             raise
 
         stage_times["planner"] = (
@@ -404,9 +521,14 @@ class AgentOrchestrator:
         )
 
         if plan is None:
-            raise RuntimeError(
-                "Planner failed to generate a task."
+            error = "Planner failed to generate a task."
+
+            await self._fail_run(
+                run_id,
+                error,
             )
+
+            raise RuntimeError(error)
 
         logger.info(
             f"Planning completed: {plan.title}"
@@ -417,6 +539,7 @@ class AgentOrchestrator:
             "Planning",
             20,
             "Planning completed.",
+            run_id,
         )
 
         # ======================================================
@@ -432,6 +555,7 @@ class AgentOrchestrator:
             "Coding",
             25,
             "Generating source code...",
+            run_id,
         )
 
         stage_start = time.monotonic()
@@ -442,10 +566,16 @@ class AgentOrchestrator:
                 memory=self.memory,
             )
 
-        except Exception:
+        except Exception as exc:
             logger.exception(
                 "Coder Agent failed."
             )
+
+            await self._fail_run(
+                run_id,
+                str(exc),
+            )
+
             raise
 
         stage_times["coder"] = (
@@ -453,9 +583,14 @@ class AgentOrchestrator:
         )
 
         if not code or not code.strip():
-            raise RuntimeError(
-                "Coder failed to generate source code."
+            error = "Coder failed to generate source code."
+
+            await self._fail_run(
+                run_id,
+                error,
             )
+
+            raise RuntimeError(error)
 
         logger.info(
             f"Generated {len(code)} characters of source code."
@@ -466,6 +601,7 @@ class AgentOrchestrator:
             "Coding",
             35,
             "Source code generated.",
+            run_id,
         )
 
         # ======================================================
@@ -481,6 +617,7 @@ class AgentOrchestrator:
             "Building",
             40,
             "Creating project structure...",
+            run_id,
         )
 
         stage_start = time.monotonic()
@@ -491,10 +628,16 @@ class AgentOrchestrator:
                 llm_output=code,
             )
 
-        except Exception:
+        except Exception as exc:
             logger.exception(
                 "Project Builder failed."
             )
+
+            await self._fail_run(
+                run_id,
+                str(exc),
+            )
+
             raise
 
         stage_times["builder"] = (
@@ -502,19 +645,34 @@ class AgentOrchestrator:
         )
 
         if not project:
-            raise RuntimeError(
-                "Project Builder returned no result."
+            error = "Project Builder returned no result."
+
+            await self._fail_run(
+                run_id,
+                error,
             )
+
+            raise RuntimeError(error)
 
         if not project.get("project_path"):
-            raise RuntimeError(
-                "Project Builder did not return project_path."
+            error = "Project Builder did not return project_path."
+
+            await self._fail_run(
+                run_id,
+                error,
             )
 
+            raise RuntimeError(error)
+
         if not project.get("zip_path"):
-            raise RuntimeError(
-                "Project Builder did not return zip_path."
+            error = "Project Builder did not return zip_path."
+
+            await self._fail_run(
+                run_id,
+                error,
             )
+
+            raise RuntimeError(error)
 
         logger.info(
             f"Project created at: "
@@ -526,6 +684,7 @@ class AgentOrchestrator:
             "Building",
             50,
             "Project built successfully.",
+            run_id,
         )
 
         # ======================================================
@@ -541,6 +700,7 @@ class AgentOrchestrator:
             "Execution",
             55,
             "Executing generated project...",
+            run_id,
         )
 
         stage_start = time.monotonic()
@@ -618,6 +778,7 @@ class AgentOrchestrator:
             "Execution",
             65,
             "Execution completed.",
+            run_id,
         )
 
         # ======================================================
@@ -642,6 +803,7 @@ class AgentOrchestrator:
             "Validation",
             70,
             "Validating, testing, and reviewing project...",
+            run_id,
         )
 
         validation, test_result, review = await asyncio.gather(
@@ -678,6 +840,7 @@ class AgentOrchestrator:
             "Review",
             75,
             "Validation, testing, and review completed.",
+            run_id,
         )
 
         # ======================================================
@@ -693,6 +856,7 @@ class AgentOrchestrator:
             "Evaluation",
             85,
             "Evaluating final project...",
+            run_id,
         )
 
         stage_start = time.monotonic()
@@ -736,6 +900,7 @@ class AgentOrchestrator:
             "Saving",
             95,
             "Saving project information...",
+            run_id,
         )
 
         stage_start = time.monotonic()
@@ -781,8 +946,9 @@ class AgentOrchestrator:
         await self._progress(
             session_id,
             "Completed",
-            100,
-            "Project generation completed.",
+            99,
+            "Finalizing project result...",
+            run_id,
         )
 
         pipeline_time = (
@@ -832,7 +998,7 @@ class AgentOrchestrator:
         # FINAL RESULT
         # ======================================================
 
-        return {
+        final_result = {
             "success": bool(
                 execution_result.get(
                     "success",
@@ -877,3 +1043,27 @@ class AgentOrchestrator:
                 "retry_stats": retry_stats,
             },
         }
+
+        # ------------------------------------------
+        # Persist final run state
+        # ------------------------------------------
+
+        await self._update_run(
+            run_id,
+            status=(
+                "completed"
+                if final_result["success"]
+                else "failed"
+            ),
+            current_step="Completed",
+            progress=100,
+            message=(
+                "Project generation completed successfully."
+                if final_result["success"]
+                else "Project generation completed with failures."
+            ),
+            result=final_result,
+            completed=True,
+        )
+
+        return final_result

@@ -15,7 +15,7 @@ from app.api.chat import router as chat_router
 from app.api.download import router as download_router
 from app.api.projects import router as projects_router
 from app.api.ws import router as ws_router
-
+from app.api.runs import router as runs_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -105,7 +105,9 @@ app.include_router(
 app.include_router(
     ws_router
 )
-
+app.include_router(
+    runs_router
+)
 
 @app.get("/")
 async def root():

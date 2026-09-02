@@ -435,10 +435,14 @@ Always choose the simplest architecture that correctly solves the user's problem
             ) from exc
 
         if plan is None:
+            error = "Planner failed to generate a task."
 
-            raise RuntimeError(
-                "PlannerAgent received no response."
+            await self._fail_run(
+                run_id,
+                error,
             )
+
+            raise RuntimeError(error)
 
         if not isinstance(plan, Task):
 
