@@ -73,6 +73,7 @@ class ProjectAnalyzer:
         "python",
         "java",
         "cpp",
+        "static_web",
     )
 
     # ==========================================================

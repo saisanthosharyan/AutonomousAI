@@ -18,18 +18,18 @@ from app.database.database import SessionLocal
 from app.database.crud import create_project
 
 from app.services.retry.retry_manager import RetryManager
-from app.services.testing.testing_manager import TestManager
 
 from app.websocket.manager import manager
 from app.memory.memory_manager import MemoryManager
 from app.services.evaluator.evaluator import Evaluator
 from app.services.run.run_manager import RunManager
 
+
 class AgentOrchestrator:
     """
     Main autonomous workflow controller for AutoDev AI.
 
-    Pipeline:
+    Final pipeline:
 
         User Request
             ↓
@@ -39,9 +39,17 @@ class AgentOrchestrator:
             ↓
         Project Builder
             ↓
-        Execution / Retry Manager
+        Execution
             ↓
-        Validation / Testing / Review
+        Execution Self-Healing
+            ↓
+        Automated Tests
+            ↓
+        Test Self-Healing
+            ↓
+        Final Validation
+            ↓
+        Final Review
             ↓
         Evaluation
             ↓
@@ -49,26 +57,19 @@ class AgentOrchestrator:
             ↓
         Final Result
 
-    RetryManager already owns the self-healing loop:
+    IMPORTANT:
 
-        Execute
-            ↓
-        Debug
-            ↓
-        FixerAgent
-            ↓
-        ProjectBuilder.rebuild()
-            ↓
-        Re-execute
-            ↓
-        Retry / Success
+        Validation and Review happen AFTER all repairs.
+
+        This prevents the system from validating/reviewing an
+        intermediate version of the project that may subsequently
+        be changed by the FixerAgent.
     """
 
     TOTAL_STEPS = 9
 
     def __init__(self) -> None:
-        # One shared MemoryManager is passed to components that need
-        # shared project/review context.
+        # Shared memory across planner/coder/reviewer/repair stages.
         self.memory = MemoryManager()
 
         self.planner = PlannerAgent()
@@ -82,7 +83,6 @@ class AgentOrchestrator:
             memory=self.memory
         )
 
-        self.tester = TestManager()
         self.evaluator = Evaluator()
 
     # ==========================================================
@@ -100,8 +100,8 @@ class AgentOrchestrator:
         """
         Persist and broadcast pipeline progress.
 
-        Run persistence must never crash the pipeline.
-        WebSocket failures must also never crash the pipeline.
+        Persistence/WebSocket failures must never crash the
+        autonomous engineering pipeline.
         """
 
         # ------------------------------------------
@@ -109,7 +109,6 @@ class AgentOrchestrator:
         # ------------------------------------------
 
         if run_id:
-
             try:
                 await asyncio.to_thread(
                     RunManager.update,
@@ -132,14 +131,13 @@ class AgentOrchestrator:
                 )
 
         # ------------------------------------------
-        # Send WebSocket progress
+        # WebSocket progress
         # ------------------------------------------
 
         if not session_id:
             return
 
         try:
-
             await manager.send_progress(
                 session_id=session_id,
                 step=step,
@@ -153,7 +151,7 @@ class AgentOrchestrator:
             )
 
     # ==========================================================
-    # RUN LIFECYCLE HELPERS
+    # RUN LIFECYCLE
     # ==========================================================
 
     async def _update_run(
@@ -171,16 +169,12 @@ class AgentOrchestrator:
     ) -> None:
         """
         Safely persist run lifecycle state.
-
-        Run persistence must never crash the autonomous
-        engineering pipeline.
         """
 
         if not run_id:
             return
 
         try:
-
             await asyncio.to_thread(
                 RunManager.update,
                 run_id,
@@ -239,11 +233,6 @@ class AgentOrchestrator:
     def _failed_review(
         error: str,
     ) -> str:
-        """
-        Reviewer failures are represented as strings because
-        ReviewerAgent.run() returns a review string.
-        """
-
         return f"Reviewer Agent failed: {error}"
 
     @staticmethod
@@ -251,13 +240,10 @@ class AgentOrchestrator:
         review: str,
     ) -> bool:
         """
-        Determine whether the reviewer actually produced a
-        successful review.
+        ReviewerAgent returns a string.
 
-        Reviewer failures are represented as strings so the
-        response schema remains consistent. However, an error
-        string must not be considered a successful review merely
-        because it is non-empty.
+        A non-empty reviewer failure message must not count
+        as a successful review.
         """
 
         if not isinstance(review, str):
@@ -286,33 +272,6 @@ class AgentOrchestrator:
         }
 
     # ==========================================================
-    # TIMING HELPER
-    # ==========================================================
-
-    @staticmethod
-    async def _timed(
-        coro,
-        label: str,
-        stage_times: dict[str, float],
-    ):
-        """
-        Await a coroutine while recording its wall-clock duration.
-
-        Safe for concurrent asyncio.gather() execution because
-        each worker writes to a different stage_times key.
-        """
-
-        start = time.monotonic()
-
-        result = await coro
-
-        stage_times[label] = (
-            time.monotonic() - start
-        )
-
-        return result
-
-    # ==========================================================
     # VALIDATION
     # ==========================================================
 
@@ -320,6 +279,11 @@ class AgentOrchestrator:
         self,
         project_path: str,
     ) -> dict[str, Any]:
+        """
+        Run final project validation.
+
+        This is deliberately executed AFTER test repairs.
+        """
 
         try:
             validation = await asyncio.to_thread(
@@ -330,71 +294,17 @@ class AgentOrchestrator:
             validation = validation or {}
 
             logger.info(
-                "Project validation completed."
+                "Final project validation completed."
             )
 
             return validation
 
         except Exception as exc:
-
             logger.exception(
                 "Project validation failed."
             )
 
             return self._failed_validation(
-                str(exc)
-            )
-
-    # ==========================================================
-    # TESTING
-    # ==========================================================
-
-    async def _run_testing(
-        self,
-        execution_result: dict[str, Any],
-        project_path: str,
-    ) -> dict[str, Any]:
-
-        if not (
-            execution_result
-            and execution_result.get("success")
-        ):
-
-            logger.warning(
-                "Skipping automated tests because "
-                "project execution failed."
-            )
-
-            return self._failed_test_result(
-                "Execution failed. Tests skipped."
-            )
-
-        try:
-            test_result = await asyncio.to_thread(
-                self.tester.run,
-                project_path,
-            )
-
-            test_result = (
-                test_result
-                or self._failed_test_result(
-                    "Test manager returned no result."
-                )
-            )
-
-            logger.info(
-                "Automated testing completed."
-            )
-
-            return test_result
-
-        except Exception as exc:
-
-            logger.exception(
-                "Automated testing failed."
-            )
-
-            return self._failed_test_result(
                 str(exc)
             )
 
@@ -406,11 +316,14 @@ class AgentOrchestrator:
         self,
         code: str,
     ) -> str:
+        """
+        Run final AI code review.
+
+        This must happen after all execution/test repairs so
+        the reviewer sees the final source.
+        """
 
         try:
-            # ReviewerAgent.run() returns a string.
-            # Use the shared MemoryManager so the reviewer can
-            # use project/review context from the pipeline.
             review = await self.reviewer.run(
                 code,
                 memory=self.memory,
@@ -419,13 +332,12 @@ class AgentOrchestrator:
             review = review or ""
 
             logger.info(
-                "AI review completed."
+                "Final AI review completed."
             )
 
             return review
 
         except Exception as exc:
-
             logger.exception(
                 "Reviewer Agent failed."
             )
@@ -473,12 +385,14 @@ class AgentOrchestrator:
         project: dict[str, Any] = {}
 
         execution_result: dict[str, Any] = {}
-        evaluation: dict[str, Any] = {}
         validation: dict[str, Any] = {}
         test_result: dict[str, Any] = {}
         review: str = ""
+        evaluation: dict[str, Any] = {}
+
         debug_report: dict[str, Any] = {}
         retry_stats: dict[str, Any] = {}
+        test_retry_stats: dict[str, Any] = {}
 
         # ======================================================
         # STEP 1 - PLANNING
@@ -521,7 +435,9 @@ class AgentOrchestrator:
         )
 
         if plan is None:
-            error = "Planner failed to generate a task."
+            error = (
+                "Planner failed to generate a task."
+            )
 
             await self._fail_run(
                 run_id,
@@ -531,7 +447,8 @@ class AgentOrchestrator:
             raise RuntimeError(error)
 
         logger.info(
-            f"Planning completed: {plan.title}"
+            "Planning completed: %s",
+            plan.title,
         )
 
         await self._progress(
@@ -583,7 +500,9 @@ class AgentOrchestrator:
         )
 
         if not code or not code.strip():
-            error = "Coder failed to generate source code."
+            error = (
+                "Coder failed to generate source code."
+            )
 
             await self._fail_run(
                 run_id,
@@ -593,7 +512,8 @@ class AgentOrchestrator:
             raise RuntimeError(error)
 
         logger.info(
-            f"Generated {len(code)} characters of source code."
+            "Generated %s characters of source code.",
+            len(code),
         )
 
         await self._progress(
@@ -645,7 +565,9 @@ class AgentOrchestrator:
         )
 
         if not project:
-            error = "Project Builder returned no result."
+            error = (
+                "Project Builder returned no result."
+            )
 
             await self._fail_run(
                 run_id,
@@ -655,7 +577,9 @@ class AgentOrchestrator:
             raise RuntimeError(error)
 
         if not project.get("project_path"):
-            error = "Project Builder did not return project_path."
+            error = (
+                "Project Builder did not return project_path."
+            )
 
             await self._fail_run(
                 run_id,
@@ -665,7 +589,9 @@ class AgentOrchestrator:
             raise RuntimeError(error)
 
         if not project.get("zip_path"):
-            error = "Project Builder did not return zip_path."
+            error = (
+                "Project Builder did not return zip_path."
+            )
 
             await self._fail_run(
                 run_id,
@@ -675,8 +601,8 @@ class AgentOrchestrator:
             raise RuntimeError(error)
 
         logger.info(
-            f"Project created at: "
-            f"{project['project_path']}"
+            "Project created at: %s",
+            project["project_path"],
         )
 
         await self._progress(
@@ -713,7 +639,7 @@ class AgentOrchestrator:
                 )
             )
 
-        except Exception:
+        except Exception as exc:
             logger.exception(
                 "Project execution failed."
             )
@@ -721,13 +647,14 @@ class AgentOrchestrator:
             execution_result = {
                 "success": False,
                 "stdout": "",
-                "stderr": "Project execution failed.",
+                "stderr": str(exc),
                 "return_code": -1,
+                "execution_time": 0,
             }
 
             debug_report = {
                 "success": False,
-                "error": "Project execution failed.",
+                "error": str(exc),
             }
 
             retry_result = None
@@ -738,16 +665,26 @@ class AgentOrchestrator:
 
         if retry_result is not None:
 
-            if not isinstance(
-                retry_result,
-                tuple,
-            ) or len(retry_result) != 5:
-
-                raise RuntimeError(
-                    "RetryManager returned an invalid result. "
-                    "Expected: (execution_result, project, code, "
+            if (
+                not isinstance(
+                    retry_result,
+                    tuple,
+                )
+                or len(retry_result) != 5
+            ):
+                error = (
+                    "RetryManager returned an invalid execution result. "
+                    "Expected: "
+                    "(execution_result, project, code, "
                     "debug_report, retry_stats)"
                 )
+
+                await self._fail_run(
+                    run_id,
+                    error,
+                )
+
+                raise RuntimeError(error)
 
             (
                 execution_result,
@@ -769,6 +706,19 @@ class AgentOrchestrator:
                 retry_stats or {}
             )
 
+        else:
+            retry_stats = {
+                "attempts": 0,
+                "repairs": 0,
+                "execution_failures": 1,
+                "repeated_errors_detected": 0,
+                "successful": False,
+            }
+
+        execution_result = (
+            execution_result or {}
+        )
+
         logger.info(
             "Execution stage completed."
         )
@@ -777,69 +727,260 @@ class AgentOrchestrator:
             session_id,
             "Execution",
             65,
-            "Execution completed.",
+            (
+                "Execution succeeded. "
+                "Starting automated test verification."
+                if execution_result.get("success")
+                else
+                "Execution failed. "
+                "Automated tests cannot verify the project."
+            ),
             run_id,
         )
 
         # ======================================================
-        # STEPS 5-7 - VALIDATION / TESTING / REVIEW
+        # STEP 5 - TESTING + TEST SELF-HEALING
         # ======================================================
         #
-        # These stages are independent:
+        # IMPORTANT:
         #
-        # Validation → project path
-        # Testing    → execution result + project path
-        # Review     → generated code
+        # We do NOT run validation/review concurrently with tests.
         #
-        # Therefore they can run concurrently.
+        # Test repair can modify the project.
+        #
+        # Therefore:
+        #
+        #     Execute
+        #        ↓
+        #     Tests
+        #        ↓
+        #     Repair if necessary
+        #        ↓
+        #     Final validation
+        #        ↓
+        #     Final review
+        #
+        # This guarantees validation/review see the final code.
 
         logger.info(
-            "Steps 5-7/9 - Validating, testing, and reviewing "
-            "(concurrently)..."
+            "Step 5/9 - Testing + test self-healing..."
+        )
+
+        await self._progress(
+            session_id,
+            "Testing",
+            70,
+            "Running automated tests and self-healing failures...",
+            run_id,
+        )
+
+        stage_start = time.monotonic()
+
+        if execution_result.get("success"):
+
+            try:
+                (
+                    test_result,
+                    project,
+                    code,
+                    test_debug_report,
+                    test_retry_stats,
+                ) = await self.retry_manager.test_with_retry(
+                    project=project,
+                    code=code,
+                )
+
+                test_result = (
+                    test_result or {}
+                )
+
+                test_debug_report = (
+                    test_debug_report or {}
+                )
+
+                test_retry_stats = (
+                    test_retry_stats or {}
+                )
+
+                # Preserve both execution and test debugging
+                # information in the final report.
+                debug_report = {
+                    "execution": debug_report,
+                    "testing": test_debug_report,
+                }
+
+            except Exception as exc:
+                logger.exception(
+                    "Test self-healing pipeline failed."
+                )
+
+                test_result = (
+                    self._failed_test_result(
+                        str(exc)
+                    )
+                )
+
+                test_retry_stats = {
+                    "attempts": 0,
+                    "repairs": 0,
+                    "test_failures": 1,
+                    "repeated_errors_detected": 0,
+                    "successful": False,
+                }
+
+                debug_report = {
+                    "execution": debug_report,
+                    "testing": {
+                        "error": str(exc),
+                    },
+                }
+
+        else:
+            logger.warning(
+                "Execution did not succeed. "
+                "Skipping test execution."
+            )
+
+            test_result = (
+                self._failed_test_result(
+                    "Execution failed. Tests skipped."
+                )
+            )
+
+            test_retry_stats = {
+                "attempts": 0,
+                "repairs": 0,
+                "test_failures": 0,
+                "repeated_errors_detected": 0,
+                "successful": False,
+            }
+
+            debug_report = {
+                "execution": debug_report,
+                "testing": {
+                    "skipped": True,
+                    "reason": (
+                        "Execution failed."
+                    ),
+                },
+            }
+
+        stage_times["testing"] = (
+            time.monotonic() - stage_start
+        )
+
+        test_result = (
+            test_result or {}
+        )
+
+        test_retry_stats = (
+            test_retry_stats or {}
+        )
+
+        logger.info(
+            "Testing/self-healing stage completed."
+        )
+
+        await self._progress(
+            session_id,
+            "Testing",
+            78,
+            (
+                "Automated tests passed."
+                if test_result.get("success")
+                else
+                "Automated tests failed or were skipped."
+            ),
+            run_id,
+        )
+
+        # ======================================================
+        # STEP 6 - FINAL VALIDATION
+        # ======================================================
+        #
+        # Validation happens AFTER all test repairs.
+        #
+        # This is critical.
+        #
+        # The validator now sees the final project state.
+
+        logger.info(
+            "Step 6/9 - Final project validation..."
         )
 
         await self._progress(
             session_id,
             "Validation",
-            70,
-            "Validating, testing, and reviewing project...",
+            82,
+            "Validating final repaired project...",
             run_id,
         )
 
-        validation, test_result, review = await asyncio.gather(
-            self._timed(
-                self._run_validation(
-                    project["project_path"]
-                ),
-                "validation",
-                stage_times,
-            ),
-            self._timed(
-                self._run_testing(
-                    execution_result,
-                    project["project_path"],
-                ),
-                "testing",
-                stage_times,
-            ),
-            self._timed(
-                self._run_review(
-                    code
-                ),
-                "review",
-                stage_times,
-            ),
+        stage_start = time.monotonic()
+
+        validation = await self._run_validation(
+            project["project_path"]
         )
 
-        validation = validation or {}
-        test_result = test_result or {}
-        review = review or ""
+        stage_times["validation"] = (
+            time.monotonic() - stage_start
+        )
+
+        validation = (
+            validation or {}
+        )
+
+        await self._progress(
+            session_id,
+            "Validation",
+            85,
+            (
+                "Final project validation passed."
+                if validation.get("valid")
+                else
+                "Final project validation reported issues."
+            ),
+            run_id,
+        )
+
+        # ======================================================
+        # STEP 7 - FINAL REVIEW
+        # ======================================================
+        #
+        # Reviewer sees the FINAL source code, including any
+        # changes made by test self-healing.
+
+        logger.info(
+            "Step 7/9 - Final AI review..."
+        )
 
         await self._progress(
             session_id,
             "Review",
-            75,
-            "Validation, testing, and review completed.",
+            88,
+            "Reviewing final repaired source code...",
+            run_id,
+        )
+
+        stage_start = time.monotonic()
+
+        review = await self._run_review(
+            code
+        )
+
+        stage_times["review"] = (
+            time.monotonic() - stage_start
+        )
+
+        review = (
+            review or ""
+        )
+
+        await self._progress(
+            session_id,
+            "Review",
+            90,
+            "Final AI review completed.",
             run_id,
         )
 
@@ -854,8 +995,8 @@ class AgentOrchestrator:
         await self._progress(
             session_id,
             "Evaluation",
-            85,
-            "Evaluating final project...",
+            92,
+            "Evaluating final project state...",
             run_id,
         )
 
@@ -868,14 +1009,15 @@ class AgentOrchestrator:
             )
 
         except Exception as exc:
-
             logger.exception(
                 "Project evaluation failed."
             )
 
             evaluation = {
                 "overall_score": 0,
-                "recommendation": "Evaluation failed.",
+                "recommendation": (
+                    "Evaluation failed."
+                ),
                 "error": str(exc),
             }
 
@@ -883,8 +1025,20 @@ class AgentOrchestrator:
             time.monotonic() - stage_start
         )
 
+        evaluation = (
+            evaluation or {}
+        )
+
         logger.info(
-            "Project evaluation completed."
+            "Final project evaluation completed."
+        )
+
+        await self._progress(
+            session_id,
+            "Evaluation",
+            95,
+            "Final evaluation completed.",
+            run_id,
         )
 
         # ======================================================
@@ -898,8 +1052,8 @@ class AgentOrchestrator:
         await self._progress(
             session_id,
             "Saving",
-            95,
-            "Saving project information...",
+            97,
+            "Saving final project information...",
             run_id,
         )
 
@@ -926,7 +1080,6 @@ class AgentOrchestrator:
             )
 
         except Exception:
-
             # Database failure must not destroy the generated project.
             logger.exception(
                 "Failed to save project to database."
@@ -940,7 +1093,7 @@ class AgentOrchestrator:
         )
 
         # ======================================================
-        # COMPLETED
+        # FINALIZATION
         # ======================================================
 
         await self._progress(
@@ -957,8 +1110,8 @@ class AgentOrchestrator:
 
         logger.info("=" * 60)
         logger.info(
-            f"AutoDev AI Pipeline Finished in "
-            f"{pipeline_time:.2f}s"
+            "AutoDev AI Pipeline Finished in %.2fs",
+            pipeline_time,
         )
         logger.info("=" * 60)
 
@@ -994,28 +1147,48 @@ class AgentOrchestrator:
             retry_stats or {}
         )
 
+        test_retry_stats = (
+            test_retry_stats or {}
+        )
+
+        # ======================================================
+        # FINAL SUCCESS
+        # ======================================================
+        #
+        # A project is successful ONLY when:
+        #
+        # 1. It executes successfully.
+        # 2. Tests pass.
+        # 3. Validation passes.
+        # 4. Reviewer produces a valid review.
+        #
+        # Evaluation score is reported but is not allowed to
+        # override deterministic execution/test/validation gates.
+
+        final_success = bool(
+            execution_result.get(
+                "success",
+                False,
+            )
+            and test_result.get(
+                "success",
+                False,
+            )
+            and validation.get(
+                "valid",
+                False,
+            )
+            and self._review_succeeded(
+                review
+            )
+        )
+
         # ======================================================
         # FINAL RESULT
         # ======================================================
 
         final_result = {
-            "success": bool(
-                execution_result.get(
-                    "success",
-                    False,
-                )
-                and validation.get(
-                    "valid",
-                    False,
-                )
-                and test_result.get(
-                    "success",
-                    False,
-                )
-                and self._review_succeeded(
-                    review
-                )
-            ),
+            "success": final_success,
 
             "plan": plan.model_dump(),
 
@@ -1031,36 +1204,42 @@ class AgentOrchestrator:
 
             "retry_stats": retry_stats,
 
+            "test_retry_stats": test_retry_stats,
+
             "review": review,
 
             "evaluation": evaluation,
 
+            # IMPORTANT:
+            # This is the final code after all repairs.
             "improved_code": code,
 
             "metrics": {
                 "pipeline_time": pipeline_time,
                 "stage_times": stage_times,
                 "retry_stats": retry_stats,
+                "test_retry_stats": test_retry_stats,
             },
         }
 
-        # ------------------------------------------
-        # Persist final run state
-        # ------------------------------------------
+        # ======================================================
+        # FINAL RUN STATE
+        # ======================================================
 
         await self._update_run(
             run_id,
             status=(
                 "completed"
-                if final_result["success"]
+                if final_success
                 else "failed"
             ),
             current_step="Completed",
             progress=100,
             message=(
                 "Project generation completed successfully."
-                if final_result["success"]
-                else "Project generation completed with failures."
+                if final_success
+                else
+                "Project generation completed with failures."
             ),
             result=final_result,
             completed=True,

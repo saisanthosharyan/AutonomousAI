@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     # LLM Priority
     # --------------------------------------------------
 
-    LLM_PRIORITY: str = "ollama,gemini,openai"
+    LLM_PRIORITY: str = "gemini,openai,ollama"
 
     # --------------------------------------------------
     # Ollama
@@ -81,7 +81,7 @@ class Settings(BaseSettings):
     # --------------------------------------------------
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file="backend/.env",
         env_file_encoding="utf-8",
         extra="ignore",
     )

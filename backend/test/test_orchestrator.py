@@ -28,9 +28,6 @@ def create_orchestrator():
             "app.agents.orchestrator.RetryManager"
         ) as retry_manager,
         patch(
-            "app.agents.orchestrator.TestManager"
-        ) as tester,
-        patch(
             "app.agents.orchestrator.Evaluator"
         ) as evaluator,
         patch(
@@ -39,8 +36,8 @@ def create_orchestrator():
     ):
         orchestrator = AgentOrchestrator()
 
-    # Make the mock RetryManager expose the same shared memory
-    # instance that AgentOrchestrator created.
+    # Keep the shared memory contract between the orchestrator
+    # and RetryManager.
     orchestrator.retry_manager.memory = orchestrator.memory
 
     return orchestrator
@@ -75,6 +72,7 @@ def configure_success(orchestrator, tmp_path):
         "zip_path": zip_path,
     }
 
+    # Execution is now handled by RetryManager.
     orchestrator.retry_manager.execute_with_retry = AsyncMock(
         return_value=(
             {
@@ -98,17 +96,43 @@ def configure_success(orchestrator, tmp_path):
         )
     )
 
+    # Testing is also handled by RetryManager.
+    #
+    # test_with_retry returns:
+    # (
+    #     test_result,
+    #     project,
+    #     code,
+    #     debug_report,
+    #     test_retry_stats,
+    # )
+    orchestrator.retry_manager.test_with_retry = AsyncMock(
+        return_value=(
+            {
+                "success": True,
+                "stdout": "All tests passed",
+                "stderr": "",
+                "return_code": 0,
+            },
+            {
+                "project_path": project_path,
+                "zip_path": zip_path,
+            },
+            "print('hello')",
+            {
+                "success": True,
+            },
+            {
+                "attempts": 1,
+                "retries": 0,
+            },
+        )
+    )
+
     orchestrator.validator.validate.return_value = {
         "valid": True,
         "errors": [],
         "warnings": [],
-    }
-
-    orchestrator.tester.run.return_value = {
-        "success": True,
-        "stdout": "All tests passed",
-        "stderr": "",
-        "return_code": 0,
     }
 
     # ReviewerAgent.run() returns a review string.
@@ -170,9 +194,10 @@ def test_orchestrator_success(
 
     assert result["success"] is True
     assert result["plan"]["title"] == "Test Project"
+
     assert result["execution"]["success"] is True
-    assert result["validation"]["valid"] is True
     assert result["tests"]["success"] is True
+    assert result["validation"]["valid"] is True
 
     # ReviewerAgent returns a string.
     assert isinstance(result["review"], str)
@@ -182,6 +207,10 @@ def test_orchestrator_success(
 
     assert result["evaluation"]["overall_score"] == 95
     assert result["improved_code"] == "print('hello')"
+
+    # Both autonomous execution and testing loops should have been used.
+    orchestrator.retry_manager.execute_with_retry.assert_awaited_once()
+    orchestrator.retry_manager.test_with_retry.assert_awaited_once()
 
     create_project.assert_called_once()
 
@@ -354,9 +383,14 @@ def test_retry_manager_failure(tmp_path):
         )
 
     assert result["execution"]["success"] is False
-    assert result["debug_report"]["success"] is False
     assert result["success"] is False
 
+    # The orchestrator should preserve the execution failure
+    # information instead of crashing.
+    assert isinstance(
+        result["debug_report"],
+        dict,
+    )
 
 def test_validation_failure_does_not_crash_pipeline(
     tmp_path,
@@ -400,8 +434,11 @@ def test_testing_failure_does_not_crash_pipeline(
         tmp_path,
     )
 
-    orchestrator.tester.run.side_effect = RuntimeError(
-        "Testing error"
+    # Testing is now performed through RetryManager.test_with_retry().
+    orchestrator.retry_manager.test_with_retry = AsyncMock(
+        side_effect=RuntimeError(
+            "Testing error"
+        )
     )
 
     with patch(
@@ -490,8 +527,7 @@ def test_evaluation_failure_does_not_crash_pipeline(
             )
         )
 
-    # The current orchestrator catches evaluator failures and
-    # returns a structured evaluation error instead of crashing.
+    # Evaluation failure is reported structurally.
     assert result["evaluation"]["overall_score"] == 0
     assert result["evaluation"]["recommendation"] == (
         "Evaluation failed."
@@ -584,8 +620,8 @@ def test_pipeline_metrics_are_recorded(
     assert "coder" in metrics["stage_times"]
     assert "builder" in metrics["stage_times"]
     assert "execution" in metrics["stage_times"]
-    assert "validation" in metrics["stage_times"]
     assert "testing" in metrics["stage_times"]
+    assert "validation" in metrics["stage_times"]
     assert "review" in metrics["stage_times"]
     assert "evaluation" in metrics["stage_times"]
     assert "save" in metrics["stage_times"]

@@ -7,6 +7,11 @@ from app.core.logger import logger
 class ConnectionManager:
     """
     Manages active WebSocket connections.
+
+    A session can have only one active connection.
+    When an old connection disconnects, it will only be
+    removed if it is still the connection registered for
+    that session.
     """
 
     def __init__(self):
@@ -21,20 +26,17 @@ class ConnectionManager:
         session_id: str,
         websocket: WebSocket,
     ):
-
         await websocket.accept()
 
-        # Replace old connection if one exists
         old = self.active_connections.get(session_id)
 
-        if (
-            old
-            and old.client_state == WebSocketState.CONNECTED
-        ):
-            try:
-                await old.close()
-            except Exception:
-                pass
+        # Replace the existing connection.
+        if old is not None and old is not websocket:
+            if old.client_state == WebSocketState.CONNECTED:
+                try:
+                    await old.close()
+                except Exception:
+                    pass
 
         self.active_connections[session_id] = websocket
 
@@ -49,15 +51,23 @@ class ConnectionManager:
     def disconnect(
         self,
         session_id: str,
+        websocket: WebSocket | None = None,
     ):
+        current = self.active_connections.get(session_id)
 
-        if session_id in self.active_connections:
+        if current is None:
+            return
 
-            self.active_connections.pop(session_id)
+        # If a specific websocket was supplied, only remove it
+        # if it is still the currently registered connection.
+        if websocket is not None and current is not websocket:
+            return
 
-            logger.info(
-                f"WebSocket disconnected: {session_id}"
-            )
+        self.active_connections.pop(session_id, None)
+
+        logger.info(
+            f"WebSocket disconnected: {session_id}"
+        )
 
     # --------------------------------------------------
     # Send JSON
@@ -68,30 +78,30 @@ class ConnectionManager:
         session_id: str,
         data: dict,
     ):
-
-        websocket = self.active_connections.get(
-            session_id
-        )
+        websocket = self.active_connections.get(session_id)
 
         if websocket is None:
             return
 
         if websocket.client_state != WebSocketState.CONNECTED:
-
-            self.disconnect(session_id)
+            self.disconnect(
+                session_id,
+                websocket,
+            )
             return
 
         try:
-
             await websocket.send_json(data)
 
         except Exception:
-
             logger.exception(
                 f"Failed sending WebSocket message: {session_id}"
             )
 
-            self.disconnect(session_id)
+            self.disconnect(
+                session_id,
+                websocket,
+            )
 
     # --------------------------------------------------
     # Progress
@@ -104,7 +114,6 @@ class ConnectionManager:
         progress: int,
         message: str,
     ):
-
         await self.send_json(
             session_id,
             {
@@ -124,7 +133,6 @@ class ConnectionManager:
         session_id: str,
         message: str,
     ):
-
         await self.send_json(
             session_id,
             {
@@ -142,7 +150,6 @@ class ConnectionManager:
         session_id: str,
         message: str,
     ):
-
         await self.send_json(
             session_id,
             {
@@ -160,7 +167,6 @@ class ConnectionManager:
         session_id: str,
         result: dict,
     ):
-
         await self.send_json(
             session_id,
             {
@@ -177,27 +183,33 @@ class ConnectionManager:
         self,
         data: dict,
     ):
-
         disconnected = []
 
-        for session_id, websocket in self.active_connections.items():
-
+        for session_id, websocket in list(
+            self.active_connections.items()
+        ):
             try:
-
-                if websocket.client_state == WebSocketState.CONNECTED:
-
+                if (
+                    websocket.client_state
+                    == WebSocketState.CONNECTED
+                ):
                     await websocket.send_json(data)
 
                 else:
-
-                    disconnected.append(session_id)
+                    disconnected.append(
+                        (session_id, websocket)
+                    )
 
             except Exception:
+                disconnected.append(
+                    (session_id, websocket)
+                )
 
-                disconnected.append(session_id)
-
-        for session_id in disconnected:
-            self.disconnect(session_id)
+        for session_id, websocket in disconnected:
+            self.disconnect(
+                session_id,
+                websocket,
+            )
 
     # --------------------------------------------------
     # Stats
@@ -205,7 +217,6 @@ class ConnectionManager:
 
     @property
     def connection_count(self) -> int:
-
         return len(self.active_connections)
 
 
