@@ -68,13 +68,21 @@ class AgentOrchestrator:
 
     TOTAL_STEPS = 9
 
-    def __init__(self) -> None:
-        # Shared memory across planner/coder/reviewer/repair stages.
+    def __init__(self, llm=None) -> None:
         self.memory = MemoryManager()
+        self.llm = llm
 
-        self.planner = PlannerAgent()
-        self.coder = CoderAgent()
-        self.reviewer = ReviewerAgent()
+        self.planner = PlannerAgent(
+            llm=llm
+        )
+
+        self.coder = CoderAgent(
+            llm=llm
+        )
+
+        self.reviewer = ReviewerAgent(
+            llm=llm
+        )
 
         self.builder = ProjectBuilder()
         self.validator = ProjectValidator()

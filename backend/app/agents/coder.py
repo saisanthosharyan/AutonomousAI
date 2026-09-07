@@ -126,9 +126,9 @@ class CoderAgent(BaseAgent):
     # INIT
     # ==========================================================
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, llm=None, **kwargs):
         super().__init__(*args, **kwargs)
-
+        self.llm = llm
         self.project_context = ProjectContext()
 
     # ==========================================================
@@ -148,7 +148,7 @@ class CoderAgent(BaseAgent):
 
         self._validate_task(task)
 
-        llm = LLMRouter.get_llm()
+        llm = self.llm or LLMRouter.get_llm()
 
         memory = memory or MemoryManager()
 

@@ -76,7 +76,7 @@ def test_chat_success(monkeypatch, tmp_path):
     monkeypatch.setattr(
         chat_module,
         "AgentOrchestrator",
-        lambda: fake_orchestrator,
+        lambda **kwargs: fake_orchestrator,
     )
 
     monkeypatch.setattr(
@@ -357,7 +357,7 @@ def test_chat_failed_pipeline(
     monkeypatch.setattr(
         chat_module,
         "AgentOrchestrator",
-        lambda: fake_orchestrator,
+        lambda **kwargs: fake_orchestrator,
     )
 
     monkeypatch.setattr(
@@ -490,7 +490,7 @@ def test_chat_orchestrator_failure(
     monkeypatch.setattr(
         chat_module,
         "AgentOrchestrator",
-        lambda: fake_orchestrator,
+        lambda **kwargs: fake_orchestrator,
     )
 
     monkeypatch.setattr(

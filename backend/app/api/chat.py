@@ -1,5 +1,7 @@
 import uuid
 from pathlib import Path
+from typing import Literal
+from app.services.llm.router import LLMRouter
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -24,6 +26,22 @@ router = APIRouter(tags=["Chat"])
 class ChatRequest(BaseModel):
     session_id: str = Field(..., min_length=1)
     message: str = Field(..., min_length=1)
+
+    provider: Literal[
+        "gemini",
+        "openai",
+        "ollama",
+    ] | None = None
+
+    api_key: str | None = Field(
+        default=None,
+        min_length=1,
+    )
+
+    model: str | None = Field(
+        default=None,
+        min_length=1,
+    )
 
 
 # --------------------------------------------------
@@ -78,8 +96,14 @@ async def chat(request: ChatRequest):
         # ------------------------------------------
         # Execute AI Pipeline
         # ------------------------------------------
-
-        orchestrator = AgentOrchestrator()
+        llm = LLMRouter.get_llm(
+            provider=request.provider,
+            api_key=request.api_key,
+            model=request.model,
+        )
+        orchestrator = AgentOrchestrator(
+            llm=llm
+        )
 
         result = await orchestrator.execute(
             task=request.message,
