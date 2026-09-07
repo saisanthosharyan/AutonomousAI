@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from app.core.logger import logger
 
@@ -32,6 +32,10 @@ class StaticWebExecutor:
             project_type="static_web",
         )
 
+        # ---------------------------------------------------------
+        # Validate project path
+        # ---------------------------------------------------------
+
         if not project.exists():
             result.stderr = (
                 f"Project directory does not exist: {project}"
@@ -43,6 +47,10 @@ class StaticWebExecutor:
                 f"Project path is not a directory: {project}"
             )
             return result
+
+        # ---------------------------------------------------------
+        # Validate entry point
+        # ---------------------------------------------------------
 
         index_html = project / "index.html"
 
@@ -67,13 +75,14 @@ class StaticWebExecutor:
             result.stderr = "index.html is empty."
             return result
 
+        # ---------------------------------------------------------
+        # Validate referenced local assets
+        # ---------------------------------------------------------
+
         missing_assets: List[str] = []
 
         for asset in self._extract_local_assets(html):
-
-            asset_path = (
-                project / asset
-            ).resolve()
+            asset_path = (project / asset).resolve()
 
             try:
                 asset_path.relative_to(project)
@@ -93,29 +102,32 @@ class StaticWebExecutor:
             )
             return result
 
+        # ---------------------------------------------------------
+        # Validate common frontend files
+        # ---------------------------------------------------------
+
         frontend_files = [
             project / "style.css",
             project / "script.js",
         ]
 
-        empty_files = []
+        empty_files: List[str] = []
 
         for file_path in frontend_files:
+            if not file_path.is_file():
+                continue
 
-            if file_path.is_file():
+            try:
+                content = file_path.read_text(
+                    encoding="utf-8",
+                    errors="ignore",
+                )
 
-                try:
-                    if not file_path.read_text(
-                        encoding="utf-8",
-                        errors="ignore",
-                    ).strip():
-                        empty_files.append(
-                            file_path.name
-                        )
-                except Exception:
-                    empty_files.append(
-                        file_path.name
-                    )
+                if not content.strip():
+                    empty_files.append(file_path.name)
+
+            except Exception:
+                empty_files.append(file_path.name)
 
         if empty_files:
             result.stderr = (
@@ -124,7 +136,16 @@ class StaticWebExecutor:
             )
             return result
 
+        # ---------------------------------------------------------
+        # Successful static web validation
+        # ---------------------------------------------------------
+
         result.success = True
+
+        # A successful execution must have a successful
+        # process-style return code.
+        result.return_code = 0
+
         result.stdout = (
             "Static web project execution validation passed.\n"
             f"Entry point: {index_html.name}\n"
@@ -154,7 +175,7 @@ class StaticWebExecutor:
         """
         import re
 
-        assets = []
+        assets: List[str] = []
 
         patterns = (
             r'<link[^>]+href=["\']([^"\']+)["\']',
@@ -162,18 +183,17 @@ class StaticWebExecutor:
         )
 
         for pattern in patterns:
-
             for match in re.findall(
                 pattern,
                 html,
                 flags=re.IGNORECASE,
             ):
-
                 asset = match.strip()
 
                 if not asset:
                     continue
 
+                # Ignore external resources.
                 if asset.startswith(
                     (
                         "http://",
@@ -199,6 +219,5 @@ class StaticWebExecutor:
                 if asset:
                     assets.append(asset)
 
-        return list(
-            dict.fromkeys(assets)
-        )
+        # Preserve order while removing duplicates.
+        return list(dict.fromkeys(assets))

@@ -43,6 +43,20 @@ class ProjectChecker:
                 ],
             }
 
+        if not project.is_dir():
+
+            logger.error(
+                "Project path is not a directory."
+            )
+
+            return {
+                "score": 0,
+                "passed": [],
+                "missing": [
+                    "Project path is not a directory."
+                ],
+            }
+
         passed = []
         missing = []
 
@@ -102,6 +116,51 @@ class ProjectChecker:
                 project / "src",
                 "src/",
                 passed,
+            )
+
+        # -----------------------------------------
+        # Static Web Project
+        # -----------------------------------------
+
+        elif project_type == "static_web":
+
+            logger.info(
+                "Checking static web project structure..."
+            )
+
+            self._check_file(
+                project / "index.html",
+                "index.html",
+                passed,
+                missing,
+            )
+
+            self._check_file(
+                project / "style.css",
+                "style.css",
+                passed,
+                missing,
+            )
+
+            self._check_file(
+                project / "script.js",
+                "script.js",
+                passed,
+                missing,
+            )
+
+            self._check_file(
+                project / "README.md",
+                "README.md",
+                passed,
+                missing,
+            )
+
+            self._check_file(
+                project / ".gitignore",
+                ".gitignore",
+                passed,
+                missing,
             )
 
         # -----------------------------------------
@@ -221,7 +280,7 @@ class ProjectChecker:
         missing: list,
     ):
 
-        if file_path.exists():
+        if file_path.is_file():
 
             passed.append(display_name)
 
@@ -238,7 +297,7 @@ class ProjectChecker:
         passed: list,
     ):
 
-        if directory.exists():
+        if directory.is_dir():
 
             passed.append(display_name)
 
@@ -265,7 +324,7 @@ class ProjectChecker:
 
         for file in priority:
 
-            if file.exists():
+            if file.is_file():
 
                 passed.append(file.name)
 

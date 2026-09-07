@@ -1,10 +1,10 @@
 from __future__ import annotations
+
 import json
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 from app.core.logger import logger
-
 
 
 class ProjectAnalyzer:
@@ -90,19 +90,13 @@ class ProjectAnalyzer:
             project_path,
         )
 
-        root = Path(
-            project_path
-        ).resolve()
+        root = Path(project_path).resolve()
 
         if not root.exists():
-            raise FileNotFoundError(
-                project_path
-            )
+            raise FileNotFoundError(project_path)
 
         if not root.is_dir():
-            raise NotADirectoryError(
-                project_path
-            )
+            raise NotADirectoryError(project_path)
 
         files = []
         folders = []
@@ -143,25 +137,15 @@ class ProjectAnalyzer:
                 except Exception:
                     pass
 
-        language = self.detect_language(
-            root
-        )
+        language = self.detect_language(root)
 
-        framework = self.detect_framework(
-            root
-        )
+        framework = self.detect_framework(root)
 
-        dependencies = self.detect_dependencies(
-            root
-        )
+        dependencies = self.detect_dependencies(root)
 
-        entry_point = self.detect_entry_point(
-            root
-        )
+        entry_point = self.detect_entry_point(root)
 
-        execution_type = self.detect(
-            root
-        )
+        execution_type = self.detect(root)
 
         summary = {
             "project_name": root.name,
@@ -222,25 +206,12 @@ class ProjectAnalyzer:
         )
 
         checks = {
-            "docker": lambda: self._has_dockerfile(
-                root
-            ),
-
-            "node": lambda: self._contains_node(
-                root
-            ),
-
-            "python": lambda: self._contains_python(
-                root
-            ),
-
-            "java": lambda: self._contains_java(
-                root
-            ),
-
-            "cpp": lambda: self._contains_cpp(
-                root
-            ),
+            "docker": lambda: self._has_dockerfile(root),
+            "node": lambda: self._contains_node(root),
+            "python": lambda: self._contains_python(root),
+            "java": lambda: self._contains_java(root),
+            "cpp": lambda: self._contains_cpp(root),
+            "static_web": lambda: self._contains_static_web(root),
         }
 
         for project_type in self._DETECTION_ORDER:
@@ -448,6 +419,46 @@ class ProjectAnalyzer:
         )
 
     # ==========================================================
+    # STATIC WEB
+    # ==========================================================
+
+    def _contains_static_web(
+        self,
+        root: Path,
+    ) -> bool:
+        """
+        Detect a static HTML/CSS/JavaScript web project.
+
+        Requirements:
+
+        - index.html must exist
+        - at least one CSS or JavaScript file must exist
+
+        This intentionally does not require package.json because
+        a true static website does not need Node.js or a package
+        manager.
+        """
+
+        index_html = root / "index.html"
+
+        if not index_html.is_file():
+            return False
+
+        css_files = self._source_files(
+            root,
+            {".css"},
+        )
+
+        js_files = self._source_files(
+            root,
+            {".js"},
+        )
+
+        return bool(
+            css_files or js_files
+        )
+
+    # ==========================================================
     # SOURCE FILES
     # ==========================================================
 
@@ -630,6 +641,7 @@ class ProjectAnalyzer:
                 return "Gradio"
 
         return "Unknown"
+
     # ==========================================================
     # DEPENDENCIES
     # ==========================================================
@@ -695,6 +707,7 @@ class ProjectAnalyzer:
             "index.ts",
             "server.ts",
             "main.ts",
+            "index.html",
         ]
 
         for name in candidates:
@@ -752,7 +765,13 @@ class ProjectAnalyzer:
 
             return True
 
-        return any(
+        if any(
             part in self.IGNORED_DIRS
             for part in relative.parts
-        )
+        ):
+            return True
+
+        if item.is_file() and item.name in self.IGNORED_FILES:
+            return True
+
+        return False
