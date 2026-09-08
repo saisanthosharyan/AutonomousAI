@@ -143,17 +143,17 @@ class RetryManager:
         self,
         max_retries: int = 3,
         memory: Optional[MemoryManager] = None,
+        llm=None,
     ):
-        self.max_retries = max(
-            1,
-            max_retries,
-        )
+        self.max_retries = max(1, max_retries)
 
         self.executor = ExecutionManager()
         self.tester = TestManager()
         self.debugger = DebugManager()
         self.builder = ProjectBuilder()
-        self.fixer = FixerAgent()
+
+        self.llm = llm
+        self.fixer = FixerAgent(llm=llm)
 
         self.memory = memory or MemoryManager()
         self.project_analyzer = ProjectAnalyzer()

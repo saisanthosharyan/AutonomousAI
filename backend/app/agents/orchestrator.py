@@ -88,7 +88,8 @@ class AgentOrchestrator:
         self.validator = ProjectValidator()
 
         self.retry_manager = RetryManager(
-            memory=self.memory
+            memory=self.memory,
+            llm=llm,
         )
 
         self.evaluator = Evaluator()

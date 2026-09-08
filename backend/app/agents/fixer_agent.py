@@ -34,6 +34,7 @@ class FixerAgent(BaseAgent):
     MIN_RESPONSE_LENGTH = 50
     MAX_FILE_PATH_LENGTH = 250
     MAX_FILES = 150
+    MAX_RESPONSE_RETRIES = 2
 
     MIN_SIZE_RATIO = 0.2
     MIN_ORIGINAL_SIZE_TO_CHECK = 200
@@ -194,7 +195,7 @@ class FixerAgent(BaseAgent):
     def __init__(self, llm=None):
         super().__init__()
 
-        self.llm = llm or LLMRouter.get_llm()
+        self.llm = llm
 
         self.project_context = ProjectContext()
 
@@ -1695,7 +1696,7 @@ You are AutoDev AI's autonomous software repair engineer.
 Your job is to repair the USER'S SOURCE PROJECT.
 
 ==========================================================
-CRITICAL RULE — PRESERVE THE PROJECT STRUCTURE
+CRITICAL RULE â€” PRESERVE THE PROJECT STRUCTURE
 ==========================================================
 
 The project below is the source of truth.
@@ -1739,7 +1740,7 @@ necessary and clearly required by the error.
 The original file path is authoritative.
 
 ==========================================================
-CRITICAL RULE — TEST FILES ARE NOT APPLICATION FILES
+CRITICAL RULE â€” TEST FILES ARE NOT APPLICATION FILES
 ==========================================================
 
 Tests and application source code have different responsibilities.
@@ -1838,7 +1839,7 @@ FILE: app.py
 [test code]
 
 ==========================================================
-CRITICAL RULE — PRESERVE SOURCE CODE
+CRITICAL RULE â€” PRESERVE SOURCE CODE
 ==========================================================
 
 The project below is the source of truth.
@@ -1963,7 +1964,7 @@ They are NOT source files.
 NEVER return runtime/debug artifacts.
 
 ==========================================================
-CRITICAL RULE — EACH FILE EXACTLY ONCE
+CRITICAL RULE â€” EACH FILE EXACTLY ONCE
 ==========================================================
 
 Every original source file must appear EXACTLY ONE TIME
@@ -2481,37 +2482,157 @@ Return ONLY FILE blocks.
         # LLM
         # ------------------------------------------------------
 
-        try:
+        # ------------------------------------------------------
+        # LLM
+        #
+        # Retry successful-but-malformed LLM responses.
+        #
+        # This is intentionally separate from the provider-level
+        # retry logic. Provider retries handle API/network errors,
+        # while this handles a successful API call that returns
+        # an incomplete FILE block.
+        # ------------------------------------------------------
 
-            response = await self.llm.generate(
-                prompt
+        llm = self.llm or LLMRouter.get_llm()
+
+        response_retry = 0
+        raw_response = ""
+        response = None
+
+        while True:
+
+            current_prompt = prompt
+
+            if response_retry > 0:
+
+                current_prompt = (
+                    f"{prompt}\n\n"
+                    "==========================================================\n"
+                    "REPAIR RESPONSE CORRECTION\n"
+                    "==========================================================\n\n"
+                    "Your previous response was incomplete and could not be "
+                    "applied.\n\n"
+                    "You MUST return the COMPLETE repaired source file "
+                    "contents.\n\n"
+                    "Do NOT return only a FILE header.\n"
+                    "Do NOT leave any FILE block empty.\n"
+                    "Do NOT return explanations.\n"
+                    "Do NOT return markdown.\n"
+                    "Do NOT return code fences.\n\n"
+                    "Return ONLY complete FILE blocks.\n\n"
+                    "For example:\n\n"
+                    "FILE: main.py\n"
+                    "print(\"repaired\")\n\n"
+                    "The content after every FILE header is mandatory."
+                )
+
+                logger.warning(
+                    "Retrying Fixer LLM response "
+                    "(response retry %d/%d).",
+                    response_retry,
+                    self.MAX_RESPONSE_RETRIES,
+                )
+
+            try:
+
+                response = await llm.generate(
+                    current_prompt
+                )
+
+            except Exception as exc:
+
+                logger.exception(
+                    "Fixer generation failed."
+                )
+
+                raise RuntimeError(
+                    f"Fixer failed: {exc}"
+                ) from exc
+
+            if response is None:
+
+                generation_error = RuntimeError(
+                    "LLM returned None."
+                )
+
+            else:
+
+                raw_response = str(
+                    response
+                ).strip()
+
+                if not raw_response:
+
+                    generation_error = RuntimeError(
+                        "LLM returned an empty response."
+                    )
+
+                else:
+
+                    generation_error = None
+
+            if generation_error is not None:
+
+                if (
+                    response_retry
+                    < self.MAX_RESPONSE_RETRIES
+                ):
+
+                    response_retry += 1
+                    continue
+
+                raise generation_error
+
+            # --------------------------------------------------
+            # Check for a truncated FILE response before entering
+            # the full repair validation pipeline.
+            # --------------------------------------------------
+
+            try:
+
+                normalized_candidate = (
+                    self._normalize_response(
+                        raw_response
+                    )
+                )
+
+                candidate_blocks = (
+                    self._extract_file_blocks(
+                        normalized_candidate
+                    )
+                )
+
+                incomplete_response = (
+                    not candidate_blocks
+                    or any(
+                        not content.strip()
+                        for _, content in candidate_blocks
+                    )
+                )
+
+            except Exception:
+
+                incomplete_response = True
+
+            if (
+                not incomplete_response
+                or response_retry
+                >= self.MAX_RESPONSE_RETRIES
+            ):
+
+                break
+
+            logger.warning(
+                "Fixer LLM returned an incomplete FILE response. "
+                "Requesting a fresh repair response."
             )
 
-        except Exception as exc:
+            response_retry += 1
 
-            logger.exception(
-                "Fixer generation failed."
-            )
-
-            raise RuntimeError(
-                f"Fixer failed: {exc}"
-            ) from exc
-
-        if response is None:
-
-            raise RuntimeError(
-                "LLM returned None."
-            )
-
-        raw_response = str(
-            response
-        ).strip()
-
-        if not raw_response:
-
-            raise RuntimeError(
-                "LLM returned an empty response."
-            )
+        logger.info(
+            "Fixer LLM response accepted after %d response retry/retries.",
+            response_retry,
+        )
 
         # ------------------------------------------------------
         # Normalize
@@ -2745,12 +2866,6 @@ Return ONLY FILE blocks.
 
             raise RuntimeError(
                 "Fixer returned an empty project."
-            )
-
-        if len(response) < self.MIN_RESPONSE_LENGTH:
-
-            raise RuntimeError(
-                "Fixer response is too short."
             )
 
         if not response.startswith(
