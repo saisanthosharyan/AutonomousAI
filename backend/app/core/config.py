@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     """
 
     # --------------------------------------------------
-    # Project
+    # Application
     # --------------------------------------------------
 
     PROJECT_NAME: str = "AutoDev AI"
@@ -19,28 +19,16 @@ class Settings(BaseSettings):
     PORT: int = 8000
 
     # --------------------------------------------------
-    # LLM Priority
+    # LLM Configuration
     # --------------------------------------------------
 
     LLM_PRIORITY: str = "gemini,openai,ollama"
 
-    # --------------------------------------------------
-    # Ollama
-    # --------------------------------------------------
-
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "qwen2.5:3b"
 
-    # --------------------------------------------------
-    # OpenAI
-    # --------------------------------------------------
-
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4.1-mini"
-
-    # --------------------------------------------------
-    # Gemini
-    # --------------------------------------------------
 
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.5-flash"
@@ -65,7 +53,13 @@ class Settings(BaseSettings):
     RETRY_DELAY: int = 2
 
     # --------------------------------------------------
-    # Project Generation
+    # Run Concurrency
+    # --------------------------------------------------
+
+    MAX_CONCURRENT_RUNS: int = 2
+
+    # --------------------------------------------------
+    # Generated Projects
     # --------------------------------------------------
 
     GENERATED_PROJECTS_DIR: str = "../generated_projects"
@@ -77,7 +71,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     # --------------------------------------------------
-    # Environment
+    # Pydantic Settings
     # --------------------------------------------------
 
     model_config = SettingsConfigDict(
