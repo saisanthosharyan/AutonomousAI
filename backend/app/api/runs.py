@@ -1,20 +1,51 @@
+﻿import uuid
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.logger import logger
 from app.database.crud import (
+    create_run,
     get_run,
     get_runs_by_session,
 )
-from app.database.database import get_db
+from app.database.database import SessionLocal, get_db
+from app.memory.conversation_cache import (
+    add_message,
+    get_history,
+)
+from app.services.llm.router import LLMRouter
+from app.services.run.job_manager import RunJobManager
 
 
 router = APIRouter(
     prefix="/runs",
     tags=["Runs"],
 )
+
+
+# --------------------------------------------------
+# Request Models
+# --------------------------------------------------
+
+
+class CreateRunRequest(BaseModel):
+    session_id: str = Field(..., min_length=1)
+    message: str = Field(..., min_length=1)
+
+    provider: str | None = None
+
+    api_key: str | None = Field(
+        default=None,
+        min_length=1,
+    )
+
+    model: str | None = Field(
+        default=None,
+        min_length=1,
+    )
 
 
 # --------------------------------------------------
@@ -41,6 +72,111 @@ def serialize_run(run):
         "started_at": run.started_at,
         "completed_at": run.completed_at,
         "updated_at": run.updated_at,
+    }
+
+
+# --------------------------------------------------
+# Create Background Run
+# --------------------------------------------------
+
+
+@router.post(
+    "",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def create_background_run(
+    request: CreateRunRequest,
+):
+
+    run_id = str(uuid.uuid4())
+
+    history = get_history(
+        request.session_id
+    )
+
+    add_message(
+        request.session_id,
+        "user",
+        request.message,
+    )
+
+    db = SessionLocal()
+
+    try:
+        create_run(
+            db=db,
+            run_id=run_id,
+            session_id=request.session_id,
+            prompt=request.message,
+        )
+
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "Failed to create run: %s",
+            run_id,
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to create run.",
+        )
+
+    finally:
+        db.close()
+
+    try:
+        RunJobManager.start(
+            run_id=run_id,
+            session_id=request.session_id,
+            prompt=request.message,
+            history=history,
+            provider=request.provider,
+            api_key=request.api_key,
+            model=request.model,
+        )
+
+    except Exception as exc:
+        logger.exception(
+            "Failed to schedule run: %s",
+            run_id,
+        )
+
+        db = SessionLocal()
+
+        try:
+            from app.database.crud import update_run
+
+            update_run(
+                db,
+                run_id,
+                status="failed",
+                current_step="Failed",
+                progress=100,
+                message="Failed to schedule run.",
+                error=str(exc),
+                completed=True,
+            )
+
+        finally:
+            db.close()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to schedule run.",
+        )
+
+    logger.info(
+        "Created background AutoDev-AI run: %s",
+        run_id,
+    )
+
+    return {
+        "success": True,
+        "run_id": run_id,
+        "session_id": request.session_id,
+        "status": "queued",
+        "message": "Run queued successfully.",
     }
 
 
