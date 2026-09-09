@@ -1,8 +1,8 @@
-﻿import asyncio
+import asyncio
 
 from app.agents.orchestrator import AgentOrchestrator
 from app.core.logger import logger
-from app.database.crud import update_run
+from app.database.crud import get_run, update_run
 from app.database.database import SessionLocal
 from app.memory.conversation_cache import add_message
 from app.services.llm.router import LLMRouter
@@ -59,6 +59,67 @@ class RunJobManager:
         )
 
         return task
+
+    @classmethod
+    def cancel(cls, run_id: str) -> bool:
+        """
+        Cancel an active background run.
+
+        Returns True when an active task was cancelled.
+        Returns False when no active task exists.
+        """
+
+        task = cls._tasks.get(run_id)
+
+        if task is None or task.done():
+            return False
+
+        cancelled = task.cancel()
+
+        if not cancelled:
+            return False
+
+        db = SessionLocal()
+
+        try:
+            run = get_run(
+                db,
+                run_id,
+            )
+
+            if run is None:
+                logger.warning(
+                    "Run not found while cancelling: %s",
+                    run_id,
+                )
+                return True
+
+            update_run(
+                db,
+                run_id,
+                status="cancelled",
+                current_step="Cancelled",
+                progress=100,
+                message="Run cancelled by user.",
+                error=None,
+                completed=True,
+            )
+
+            logger.info(
+                "Background run cancelled: %s",
+                run_id,
+            )
+
+        except Exception:
+            logger.exception(
+                "Failed to persist cancellation for run: %s",
+                run_id,
+            )
+
+        finally:
+            db.close()
+
+        return True
 
     @classmethod
     def _task_done(

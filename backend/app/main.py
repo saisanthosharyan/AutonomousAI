@@ -6,8 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.logger import logger
 
-from app.database.database import Base, engine
+from app.database.database import Base, SessionLocal, engine
 from app.database import models  # noqa: F401
+from app.database.crud import recover_stale_runs
 
 from app.services.llm.router import LLMRouter
 
@@ -152,3 +153,5 @@ async def current_llm():
             "Unknown",
         ),
     }
+
+

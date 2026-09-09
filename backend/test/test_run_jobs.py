@@ -405,3 +405,201 @@ def test_background_run_api_key_not_persisted(
 
     finally:
         delete_run(run_id)
+
+@pytest.mark.asyncio
+async def test_cancel_active_run(monkeypatch):
+    run_id = f"cancel-job-{uuid.uuid4()}"
+    session_id = f"cancel-session-{uuid.uuid4()}"
+
+    db = SessionLocal()
+
+    try:
+        run = Run(
+            id=run_id,
+            session_id=session_id,
+            prompt="Long running task",
+            status="running",
+            current_step="Coding",
+            progress=35,
+            message="Generating code.",
+        )
+
+        db.add(run)
+        db.commit()
+
+    finally:
+        db.close()
+
+    async def fake_execute(**kwargs):
+        await asyncio.sleep(60)
+
+    monkeypatch.setattr(
+        RunJobManager,
+        "_execute",
+        fake_execute,
+    )
+
+    task = RunJobManager.start(
+        run_id=run_id,
+        session_id=session_id,
+        prompt="Long running task",
+        history=[],
+    )
+
+    try:
+        await asyncio.sleep(0)
+
+        assert RunJobManager.is_running(run_id)
+
+        cancelled = RunJobManager.cancel(run_id)
+
+        assert cancelled is True
+
+        await asyncio.gather(
+            task,
+            return_exceptions=True,
+        )
+
+        await asyncio.sleep(0)
+
+        assert not RunJobManager.is_running(run_id)
+
+        run = get_run_from_db(run_id)
+
+        assert run is not None
+        assert run.status == "cancelled"
+        assert run.current_step == "Cancelled"
+        assert run.progress == 100
+        assert run.message == "Run cancelled by user."
+        assert run.completed_at is not None
+        assert run.error is None
+
+    finally:
+        existing = RunJobManager._tasks.pop(
+            run_id,
+            None,
+        )
+
+        if existing is not None and not existing.done():
+            existing.cancel()
+
+            await asyncio.gather(
+                existing,
+                return_exceptions=True,
+            )
+
+        delete_run(run_id)
+
+
+def test_cancel_unknown_run():
+    run_id = f"unknown-cancel-{uuid.uuid4()}"
+
+    client = TestClient(app)
+
+    response = client.post(
+        f"/runs/{run_id}/cancel",
+    )
+
+    assert response.status_code == 404
+
+    data = response.json()
+
+    assert data["detail"] == "Run not found."
+
+
+@pytest.mark.parametrize(
+    "run_status",
+    [
+        "completed",
+        "failed",
+        "cancelled",
+    ],
+)
+def test_cancel_finished_run(run_status):
+    run_id = f"finished-cancel-{uuid.uuid4()}"
+    session_id = f"finished-session-{uuid.uuid4()}"
+
+    db = SessionLocal()
+
+    try:
+        run = Run(
+            id=run_id,
+            session_id=session_id,
+            prompt="Finished task",
+            status=run_status,
+            current_step="Completed",
+            progress=100,
+            message="Run finished.",
+        )
+
+        db.add(run)
+        db.commit()
+
+    finally:
+        db.close()
+
+    client = TestClient(app)
+
+    try:
+        response = client.post(
+            f"/runs/{run_id}/cancel",
+        )
+
+        assert response.status_code == 409
+
+        data = response.json()
+
+        assert (
+            data["detail"]
+            == (
+                "Run cannot be cancelled because "
+                f"it is already {run_status}."
+            )
+        )
+
+    finally:
+        delete_run(run_id)
+
+
+@pytest.mark.asyncio
+async def test_cancel_missing_active_task():
+    run_id = f"orphan-cancel-{uuid.uuid4()}"
+    session_id = f"orphan-session-{uuid.uuid4()}"
+
+    db = SessionLocal()
+
+    try:
+        run = Run(
+            id=run_id,
+            session_id=session_id,
+            prompt="Orphaned task",
+            status="running",
+            current_step="Coding",
+            progress=35,
+            message="Generating code.",
+        )
+
+        db.add(run)
+        db.commit()
+
+    finally:
+        db.close()
+
+    client = TestClient(app)
+
+    try:
+        response = client.post(
+            f"/runs/{run_id}/cancel",
+        )
+
+        assert response.status_code == 409
+
+        data = response.json()
+
+        assert (
+            data["detail"]
+            == "Run is not currently active."
+        )
+
+    finally:
+        delete_run(run_id)

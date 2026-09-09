@@ -226,4 +226,66 @@ def update_run(
 
     except Exception:
         db.rollback()
+        raise# --------------------------------------------------
+# Recover Stale Runs
+# --------------------------------------------------
+
+
+def recover_stale_runs(
+    db: Session,
+):
+    """
+    Marks queued/running runs as failed when the application
+    starts without their corresponding in-memory asyncio tasks.
+
+    This protects against runs being permanently stuck after
+    a process crash or restart.
+    """
+
+    stale_runs = (
+        db.query(Run)
+        .filter(
+            Run.status.in_(
+                [
+                    "queued",
+                    "running",
+                ]
+            )
+        )
+        .all()
+    )
+
+    recovered = 0
+
+    try:
+        for run in stale_runs:
+            run.status = "failed"
+            run.current_step = "Recovery"
+            run.progress = 100
+            run.message = (
+                "Run marked failed because the application "
+                "restarted before the run completed."
+            )
+            run.error = (
+                "Stale run recovered after application restart."
+            )
+            run.completed_at = datetime.now(UTC).replace(
+                tzinfo=None
+            )
+            run.updated_at = datetime.now(UTC).replace(
+                tzinfo=None
+            )
+
+            recovered += 1
+
+        if recovered:
+            db.commit()
+
+            for run in stale_runs:
+                db.refresh(run)
+
+        return recovered
+
+    except Exception:
+        db.rollback()
         raise

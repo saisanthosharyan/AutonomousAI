@@ -1,4 +1,4 @@
-﻿import uuid
+import uuid
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -10,6 +10,7 @@ from app.database.crud import (
     create_run,
     get_run,
     get_runs_by_session,
+    update_run,
 )
 from app.database.database import SessionLocal, get_db
 from app.memory.conversation_cache import (
@@ -145,8 +146,6 @@ async def create_background_run(
         db = SessionLocal()
 
         try:
-            from app.database.crud import update_run
-
             update_run(
                 db,
                 run_id,
@@ -184,6 +183,95 @@ async def create_background_run(
 # Get Runs By Session
 # --------------------------------------------------
 
+
+
+# --------------------------------------------------
+# Cancel Run
+# --------------------------------------------------
+
+
+@router.post("/{run_id}/cancel")
+async def cancel_run(
+    run_id: str,
+):
+    db = SessionLocal()
+
+    try:
+        run = get_run(
+            db,
+            run_id,
+        )
+
+        if run is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Run not found.",
+            )
+
+        if run.status in {
+            "completed",
+            "failed",
+            "cancelled",
+        }:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Run cannot be cancelled because "
+                    f"it is already {run.status}."
+                ),
+            )
+
+        cancelled = RunJobManager.cancel(
+            run_id,
+        )
+
+        if not cancelled:
+            current_run = get_run(
+                db,
+                run_id,
+            )
+
+            if current_run is not None and current_run.status in {
+                "completed",
+                "failed",
+                "cancelled",
+            }:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "Run finished before cancellation "
+                        "could be applied."
+                    ),
+                )
+
+            raise HTTPException(
+                status_code=409,
+                detail="Run is not currently active.",
+            )
+
+        return {
+            "success": True,
+            "run_id": run_id,
+            "status": "cancelled",
+            "message": "Run cancelled successfully.",
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception:
+        logger.exception(
+            "Failed to cancel run: %s",
+            run_id,
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to cancel run.",
+        )
+
+    finally:
+        db.close()
 
 @router.get("/session/{session_id}")
 def session_runs(
@@ -255,3 +343,7 @@ def run_details(
             status_code=500,
             detail="Unable to retrieve run.",
         )
+
+
+
+
