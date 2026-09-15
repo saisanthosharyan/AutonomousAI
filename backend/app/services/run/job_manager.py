@@ -25,17 +25,10 @@ class RunJobManager:
 
     _semaphore: asyncio.Semaphore | None = None
 
-    # --------------------------------------------------
-    # Semaphore
-    # --------------------------------------------------
-
     @classmethod
     def _get_semaphore(cls) -> asyncio.Semaphore:
         """
         Return the shared concurrency semaphore.
-
-        The semaphore is created lazily so it is initialized
-        inside the active asyncio event loop.
         """
 
         if cls._semaphore is None:
@@ -45,15 +38,12 @@ class RunJobManager:
 
         return cls._semaphore
 
-    # --------------------------------------------------
-    # Start
-    # --------------------------------------------------
-
     @classmethod
     def start(
         cls,
         *,
         run_id: str,
+        user_id: int | None = None,
         session_id: str,
         prompt: str,
         history: list,
@@ -63,13 +53,8 @@ class RunJobManager:
     ) -> asyncio.Task:
         """
         Schedule a background AutoDev-AI run.
-
-        The task is registered immediately, but actual execution
-        is controlled by the concurrency semaphore.
         """
 
-        # Prevent accidental duplicate in-memory scheduling
-        # for the same run ID.
         existing_task = cls._tasks.get(run_id)
 
         if existing_task is not None and not existing_task.done():
@@ -80,6 +65,7 @@ class RunJobManager:
         task = asyncio.create_task(
             cls._execute(
                 run_id=run_id,
+                user_id=user_id,
                 session_id=session_id,
                 prompt=prompt,
                 history=history,
@@ -105,17 +91,14 @@ class RunJobManager:
 
         return task
 
-    # --------------------------------------------------
-    # Cancel
-    # --------------------------------------------------
-
     @classmethod
-    def cancel(cls, run_id: str) -> bool:
+    def cancel(
+        cls,
+        run_id: str,
+        user_id: int | None = None,
+    ) -> bool:
         """
         Cancel an active background run.
-
-        Returns True when an active task was cancelled.
-        Returns False when no active task exists.
         """
 
         task = cls._tasks.get(run_id)
@@ -134,6 +117,7 @@ class RunJobManager:
             run = get_run(
                 db,
                 run_id,
+                user_id,
             )
 
             if run is None:
@@ -146,6 +130,7 @@ class RunJobManager:
             update_run(
                 db,
                 run_id,
+                user_id=user_id,
                 status="cancelled",
                 current_step="Cancelled",
                 progress=100,
@@ -170,10 +155,6 @@ class RunJobManager:
 
         return True
 
-    # --------------------------------------------------
-    # Task Completion
-    # --------------------------------------------------
-
     @classmethod
     def _task_done(
         cls,
@@ -182,8 +163,7 @@ class RunJobManager:
     ) -> None:
         """
         Remove a completed task from the registry and consume
-        its exception so asyncio does not report an unhandled
-        task exception.
+        its exception.
         """
 
         cls._tasks.pop(run_id, None)
@@ -203,15 +183,12 @@ class RunJobManager:
                 run_id,
             )
 
-    # --------------------------------------------------
-    # Execute
-    # --------------------------------------------------
-
     @classmethod
     async def _execute(
         cls,
         *,
         run_id: str,
+        user_id: int | None,
         session_id: str,
         prompt: str,
         history: list,
@@ -221,12 +198,6 @@ class RunJobManager:
     ) -> None:
         """
         Execute the actual AutoDev-AI workflow.
-
-        The semaphore ensures that no more than
-        MAX_CONCURRENT_RUNS workflows execute at the same time.
-
-        Runs beyond the configured limit remain queued in memory
-        until an execution slot becomes available.
         """
 
         semaphore = cls._get_semaphore()
@@ -243,38 +214,23 @@ class RunJobManager:
                     run_id,
                 )
 
-                # --------------------------------------------------
-                # Resolve LLM
-                # --------------------------------------------------
-
                 llm = LLMRouter.get_llm(
                     provider=provider,
                     api_key=api_key,
                     model=model,
                 )
 
-                # --------------------------------------------------
-                # Create orchestrator
-                # --------------------------------------------------
-
                 orchestrator = AgentOrchestrator(
                     llm=llm,
                 )
-
-                # --------------------------------------------------
-                # Execute autonomous workflow
-                # --------------------------------------------------
 
                 result = await orchestrator.execute(
                     task=prompt,
                     history=history,
                     session_id=session_id,
                     run_id=run_id,
+                    user_id=user_id,
                 )
-
-                # --------------------------------------------------
-                # Store assistant response
-                # --------------------------------------------------
 
                 add_message(
                     session_id,
@@ -292,10 +248,6 @@ class RunJobManager:
                 "Background run job cancelled: %s",
                 run_id,
             )
-
-            # Re-raise so the asyncio task remains properly
-            # cancelled and the semaphore context manager can
-            # release the slot.
             raise
 
         except Exception as exc:
@@ -310,6 +262,7 @@ class RunJobManager:
                 update_run(
                     db,
                     run_id,
+                    user_id=user_id,
                     status="failed",
                     current_step="Failed",
                     progress=100,
@@ -327,17 +280,10 @@ class RunJobManager:
             finally:
                 db.close()
 
-    # --------------------------------------------------
-    # Registry Information
-    # --------------------------------------------------
-
     @classmethod
     def active_count(cls) -> int:
         """
         Return the number of currently active background tasks.
-
-        This includes tasks waiting for a concurrency slot as well
-        as tasks currently executing.
         """
 
         return sum(
@@ -362,8 +308,6 @@ class RunJobManager:
     ) -> bool:
         """
         Return True when a run has an active asyncio task.
-
-        A task waiting for a semaphore slot is considered active.
         """
 
         task = cls._tasks.get(run_id)
@@ -372,3 +316,6 @@ class RunJobManager:
             return False
 
         return not task.done()
+
+
+

@@ -1,24 +1,22 @@
+from datetime import UTC, datetime
+import json
+
 from sqlalchemy.orm import Session
 
-import json
-from datetime import datetime, UTC
 from .models import Project, Run
-
-# --------------------------------------------------
-# Create
-# --------------------------------------------------
 
 
 def create_project(
     db: Session,
+    user_id: int,
     session_id: str,
     title: str,
     prompt: str,
     project_path: str,
     zip_path: str,
 ):
-
     project = Project(
+        user_id=user_id,
         session_id=session_id,
         title=title,
         prompt=prompt,
@@ -27,7 +25,6 @@ def create_project(
     )
 
     try:
-
         db.add(project)
         db.commit()
         db.refresh(project)
@@ -35,99 +32,88 @@ def create_project(
         return project
 
     except Exception:
-
         db.rollback()
         raise
 
 
-# --------------------------------------------------
-# Read All
-# --------------------------------------------------
-
-
-def get_projects(db: Session):
-
+def get_projects(
+    db: Session,
+    user_id: int,
+):
     return (
         db.query(Project)
+        .filter(Project.user_id == user_id)
         .order_by(Project.created_at.desc())
         .all()
     )
-
-
-# --------------------------------------------------
-# Read One
-# --------------------------------------------------
 
 
 def get_project(
     db: Session,
     project_id: int,
+    user_id: int,
 ):
-
     return (
         db.query(Project)
-        .filter(Project.id == project_id)
+        .filter(
+            Project.id == project_id,
+            Project.user_id == user_id,
+        )
         .first()
     )
-
-
-# --------------------------------------------------
-# Read By Session
-# --------------------------------------------------
 
 
 def get_projects_by_session(
     db: Session,
     session_id: str,
+    user_id: int,
 ):
-
     return (
         db.query(Project)
-        .filter(Project.session_id == session_id)
+        .filter(
+            Project.session_id == session_id,
+            Project.user_id == user_id,
+        )
         .order_by(Project.created_at.desc())
         .all()
     )
 
 
-# --------------------------------------------------
-# Delete
-# --------------------------------------------------
-
-
 def delete_project(
     db: Session,
     project_id: int,
+    user_id: int,
 ):
-
-    project = get_project(db, project_id)
+    project = get_project(
+        db,
+        project_id,
+        user_id,
+    )
 
     if project is None:
         return None
 
     try:
-
         db.delete(project)
         db.commit()
 
         return project
 
     except Exception:
-
         db.rollback()
         raise
-# --------------------------------------------------
-# Runs
-# --------------------------------------------------
 
 
 def create_run(
     db: Session,
+    user_id: int,
     run_id: str,
     session_id: str,
     prompt: str,
 ):
     run = Run(
         id=run_id,
+        user_id=user_id,
         session_id=session_id,
         prompt=prompt,
         status="queued",
@@ -151,21 +137,44 @@ def create_run(
 def get_run(
     db: Session,
     run_id: str,
+    user_id: int | None = None,
+):
+    query = (
+        db.query(Run)
+        .filter(Run.id == run_id)
+    )
+
+    if user_id is not None:
+        query = query.filter(
+            Run.user_id == user_id,
+        )
+
+    return query.first()
+
+
+def get_runs(
+    db: Session,
+    user_id: int,
 ):
     return (
         db.query(Run)
-        .filter(Run.id == run_id)
-        .first()
+        .filter(Run.user_id == user_id)
+        .order_by(Run.created_at.desc())
+        .all()
     )
 
 
 def get_runs_by_session(
     db: Session,
     session_id: str,
+    user_id: int,
 ):
     return (
         db.query(Run)
-        .filter(Run.session_id == session_id)
+        .filter(
+            Run.session_id == session_id,
+            Run.user_id == user_id,
+        )
         .order_by(Run.created_at.desc())
         .all()
     )
@@ -175,6 +184,7 @@ def update_run(
     db: Session,
     run_id: str,
     *,
+    user_id: int | None = None,
     status: str | None = None,
     current_step: str | None = None,
     progress: int | None = None,
@@ -184,7 +194,11 @@ def update_run(
     started: bool = False,
     completed: bool = False,
 ):
-    run = get_run(db, run_id)
+    run = get_run(
+        db,
+        run_id,
+        user_id,
+    )
 
     if run is None:
         return None
@@ -196,7 +210,10 @@ def update_run(
         run.current_step = current_step
 
     if progress is not None:
-        run.progress = max(0, min(100, progress))
+        run.progress = max(
+            0,
+            min(100, progress),
+        )
 
     if message is not None:
         run.message = message
@@ -211,12 +228,18 @@ def update_run(
         run.error = error
 
     if started and run.started_at is None:
-        run.started_at = datetime.now(UTC).replace(tzinfo=None)
+        run.started_at = datetime.now(
+            UTC
+        ).replace(tzinfo=None)
 
     if completed:
-        run.completed_at = datetime.now(UTC).replace(tzinfo=None)
+        run.completed_at = datetime.now(
+            UTC
+        ).replace(tzinfo=None)
 
-    run.updated_at = datetime.now(UTC).replace(tzinfo=None)
+    run.updated_at = datetime.now(
+        UTC
+    ).replace(tzinfo=None)
 
     try:
         db.commit()
@@ -226,9 +249,7 @@ def update_run(
 
     except Exception:
         db.rollback()
-        raise# --------------------------------------------------
-# Recover Stale Runs
-# --------------------------------------------------
+        raise
 
 
 def recover_stale_runs(
@@ -269,12 +290,12 @@ def recover_stale_runs(
             run.error = (
                 "Stale run recovered after application restart."
             )
-            run.completed_at = datetime.now(UTC).replace(
-                tzinfo=None
-            )
-            run.updated_at = datetime.now(UTC).replace(
-                tzinfo=None
-            )
+            run.completed_at = datetime.now(
+                UTC
+            ).replace(tzinfo=None)
+            run.updated_at = datetime.now(
+                UTC
+            ).replace(tzinfo=None)
 
             recovered += 1
 

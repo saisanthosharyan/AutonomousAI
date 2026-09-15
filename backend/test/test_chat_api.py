@@ -5,6 +5,17 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.api import chat as chat_module
 from app.database.database import Base, engine
+from app.services.auth.service import create_access_token
+
+
+TEST_TOKEN = create_access_token(
+    user_id=1,
+    username="santhosh_test",
+)
+
+AUTH_HEADERS = {
+    "Authorization": f"Bearer {TEST_TOKEN}",
+}
 
 
 # --------------------------------------------------
@@ -117,6 +128,7 @@ def test_chat_success(monkeypatch, tmp_path):
 
     response = client.post(
         "/chat",
+        headers=AUTH_HEADERS,
         json={
             "session_id": "test-session",
             "message": (
@@ -376,6 +388,7 @@ def test_chat_failed_pipeline(
 
     response = client.post(
         "/chat",
+        headers=AUTH_HEADERS,
         json={
             "session_id": "failed-session",
             "message": "Create an application",
@@ -509,6 +522,7 @@ def test_chat_orchestrator_failure(
 
     response = client.post(
         "/chat",
+        headers=AUTH_HEADERS,
         json={
             "session_id": "test-session",
             "message": "Build an application",
@@ -576,6 +590,7 @@ def test_chat_validation():
     # Empty session ID
     response = client.post(
         "/chat",
+        headers=AUTH_HEADERS,
         json={
             "session_id": "",
             "message": "Build an application",
@@ -587,6 +602,7 @@ def test_chat_validation():
     # Empty message
     response = client.post(
         "/chat",
+        headers=AUTH_HEADERS,
         json={
             "session_id": "test-session",
             "message": "",
@@ -594,3 +610,5 @@ def test_chat_validation():
     )
 
     assert response.status_code == 422
+
+

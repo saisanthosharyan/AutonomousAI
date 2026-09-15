@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import json
 import uuid
 
@@ -9,6 +9,17 @@ from app.database.database import Base, SessionLocal, engine
 from app.database.models import Run
 from app.main import app
 from app.services.run.job_manager import RunJobManager
+from app.services.auth.service import create_access_token
+
+
+TEST_TOKEN = create_access_token(
+    user_id=1,
+    username="santhosh_test",
+)
+
+AUTH_HEADERS = {
+    "Authorization": f"Bearer {TEST_TOKEN}",
+}
 
 
 Base.metadata.create_all(bind=engine)
@@ -22,6 +33,19 @@ def get_run_from_db(run_id):
             db.query(Run)
             .filter(Run.id == run_id)
             .first()
+        )
+    finally:
+        db.close()
+
+
+def get_runs_for_session(session_id):
+    db = SessionLocal()
+
+    try:
+        return (
+            db.query(Run)
+            .filter(Run.session_id == session_id)
+            .all()
         )
     finally:
         db.close()
@@ -61,6 +85,7 @@ def test_create_background_run(monkeypatch):
 
     response = client.post(
         "/runs",
+        headers=AUTH_HEADERS,
         json={
             "session_id": session_id,
             "message": "Create a hello world application",
@@ -118,6 +143,7 @@ def test_create_background_run_passes_llm_options(
 
     response = client.post(
         "/runs",
+        headers=AUTH_HEADERS,
         json={
             "session_id": session_id,
             "message": "Build a Python API",
@@ -164,6 +190,7 @@ async def test_background_job_success(monkeypatch):
     try:
         run = Run(
             id=run_id,
+            user_id=1,
             session_id=session_id,
             prompt="Create a test application",
             status="queued",
@@ -194,9 +221,6 @@ async def test_background_job_success(monkeypatch):
 
             return fake_result
 
-    # IMPORTANT:
-    # job_manager.py imports AgentOrchestrator directly,
-    # so patch the symbol inside job_manager.
     monkeypatch.setattr(
         "app.services.run.job_manager.AgentOrchestrator",
         FakeOrchestrator,
@@ -223,6 +247,7 @@ async def test_background_job_success(monkeypatch):
     try:
         await RunJobManager._execute(
             run_id=run_id,
+            user_id=1,
             session_id=session_id,
             prompt="Create a test application",
             history=[],
@@ -253,6 +278,7 @@ async def test_background_job_failure(monkeypatch):
     try:
         run = Run(
             id=run_id,
+            user_id=1,
             session_id=session_id,
             prompt="Create a broken application",
             status="queued",
@@ -289,6 +315,7 @@ async def test_background_job_failure(monkeypatch):
     try:
         await RunJobManager._execute(
             run_id=run_id,
+            user_id=1,
             session_id=session_id,
             prompt="Create a broken application",
             history=[],
@@ -373,6 +400,7 @@ def test_background_run_api_key_not_persisted(
 
     response = client.post(
         "/runs",
+        headers=AUTH_HEADERS,
         json={
             "session_id": session_id,
             "message": "Create an application",
@@ -406,6 +434,364 @@ def test_background_run_api_key_not_persisted(
     finally:
         delete_run(run_id)
 
+
+def test_reject_duplicate_active_run(
+    monkeypatch,
+):
+    session_id = f"duplicate-session-{uuid.uuid4()}"
+    existing_run_id = f"existing-{uuid.uuid4()}"
+
+    db = SessionLocal()
+
+    try:
+        run = Run(
+            id=existing_run_id,
+            user_id=1,
+            session_id=session_id,
+            prompt="Existing active task",
+            status="running",
+            current_step="Coding",
+            progress=40,
+            message="Run is currently executing.",
+        )
+
+        db.add(run)
+        db.commit()
+
+    finally:
+        db.close()
+
+    start_called = False
+
+    def fake_start(**kwargs):
+        nonlocal start_called
+        start_called = True
+
+    monkeypatch.setattr(
+        "app.api.runs.RunJobManager.start",
+        fake_start,
+    )
+
+    client = TestClient(app)
+
+    try:
+        response = client.post(
+        "/runs",
+        headers=AUTH_HEADERS,
+            json={
+                "session_id": session_id,
+                "message": "Start another task",
+            },
+        )
+
+        assert response.status_code == 409
+
+        data = response.json()
+
+        assert (
+            data["detail"]
+            == "An active run already exists for this session."
+        )
+
+        assert start_called is False
+
+        runs = get_runs_for_session(session_id)
+
+        assert len(runs) == 1
+        assert runs[0].id == existing_run_id
+        assert runs[0].prompt == "Existing active task"
+
+    finally:
+        delete_run(existing_run_id)
+
+
+def test_reject_duplicate_queued_run(
+    monkeypatch,
+):
+    session_id = f"queued-duplicate-{uuid.uuid4()}"
+    existing_run_id = f"queued-existing-{uuid.uuid4()}"
+
+    db = SessionLocal()
+
+    try:
+        run = Run(
+            id=existing_run_id,
+            user_id=1,
+            session_id=session_id,
+            prompt="Queued active task",
+            status="queued",
+            current_step="queued",
+            progress=0,
+            message="Run queued.",
+        )
+
+        db.add(run)
+        db.commit()
+
+    finally:
+        db.close()
+
+    start_called = False
+
+    def fake_start(**kwargs):
+        nonlocal start_called
+        start_called = True
+
+    monkeypatch.setattr(
+        "app.api.runs.RunJobManager.start",
+        fake_start,
+    )
+
+    client = TestClient(app)
+
+    try:
+        response = client.post(
+        "/runs",
+        headers=AUTH_HEADERS,
+            json={
+                "session_id": session_id,
+                "message": "Start another queued task",
+            },
+        )
+
+        assert response.status_code == 409
+
+        data = response.json()
+
+        assert (
+            data["detail"]
+            == "An active run already exists for this session."
+        )
+
+        assert start_called is False
+
+        runs = get_runs_for_session(session_id)
+
+        assert len(runs) == 1
+
+    finally:
+        delete_run(existing_run_id)
+
+
+@pytest.mark.parametrize(
+    "run_status",
+    [
+        "completed",
+        "failed",
+        "cancelled",
+    ],
+)
+def test_new_run_allowed_after_finished_run(
+    monkeypatch,
+    run_status,
+):
+    session_id = (
+        f"finished-session-{run_status}-{uuid.uuid4()}"
+    )
+    existing_run_id = f"finished-{uuid.uuid4()}"
+    captured = {}
+
+    db = SessionLocal()
+
+    try:
+        run = Run(
+            id=existing_run_id,
+            user_id=1,
+            session_id=session_id,
+            prompt="Previous task",
+            status=run_status,
+            current_step="Completed",
+            progress=100,
+            message="Previous run finished.",
+        )
+
+        db.add(run)
+        db.commit()
+
+    finally:
+        db.close()
+
+    def fake_start(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "app.api.runs.RunJobManager.start",
+        fake_start,
+    )
+
+    client = TestClient(app)
+
+    response = client.post(
+        "/runs",
+        headers=AUTH_HEADERS,
+        json={
+            "session_id": session_id,
+            "message": "Start a new task",
+        },
+    )
+
+    assert response.status_code == 202
+
+    data = response.json()
+
+    assert data["success"] is True
+    assert data["session_id"] == session_id
+    assert data["status"] == "queued"
+    assert data["run_id"] != existing_run_id
+
+    new_run_id = data["run_id"]
+
+    try:
+        assert captured["run_id"] == new_run_id
+        assert captured["session_id"] == session_id
+        assert captured["prompt"] == "Start a new task"
+
+        runs = get_runs_for_session(session_id)
+
+        assert len(runs) == 2
+
+    finally:
+        delete_run(existing_run_id)
+        delete_run(new_run_id)
+
+
+def test_different_sessions_can_start_runs(
+    monkeypatch,
+):
+    session_one = f"session-one-{uuid.uuid4()}"
+    session_two = f"session-two-{uuid.uuid4()}"
+
+    existing_run_id = f"session-one-run-{uuid.uuid4()}"
+
+    db = SessionLocal()
+
+    try:
+        run = Run(
+            id=existing_run_id,
+            user_id=1,
+            session_id=session_one,
+            prompt="Existing task",
+            status="running",
+            current_step="Coding",
+            progress=50,
+            message="Running.",
+        )
+
+        db.add(run)
+        db.commit()
+
+    finally:
+        db.close()
+
+    captured = {}
+
+    def fake_start(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "app.api.runs.RunJobManager.start",
+        fake_start,
+    )
+
+    client = TestClient(app)
+
+    response = client.post(
+        "/runs",
+        headers=AUTH_HEADERS,
+        json={
+            "session_id": session_two,
+            "message": "Different session task",
+        },
+    )
+
+    assert response.status_code == 202
+
+    data = response.json()
+
+    assert data["success"] is True
+    assert data["session_id"] == session_two
+    assert data["run_id"] != existing_run_id
+
+    new_run_id = data["run_id"]
+
+    try:
+        assert captured["run_id"] == new_run_id
+        assert captured["session_id"] == session_two
+        assert captured["prompt"] == "Different session task"
+
+    finally:
+        delete_run(existing_run_id)
+        delete_run(new_run_id)
+
+
+def test_duplicate_run_does_not_add_user_message(
+    monkeypatch,
+):
+    session_id = f"message-protection-{uuid.uuid4()}"
+    existing_run_id = f"message-existing-{uuid.uuid4()}"
+
+    db = SessionLocal()
+
+    try:
+        run = Run(
+            id=existing_run_id,
+            user_id=1,
+            session_id=session_id,
+            prompt="Existing task",
+            status="running",
+            current_step="Coding",
+            progress=20,
+            message="Running.",
+        )
+
+        db.add(run)
+        db.commit()
+
+    finally:
+        db.close()
+
+    monkeypatch.setattr(
+        "app.api.runs.RunJobManager.start",
+        lambda **kwargs: pytest.fail(
+            "RunJobManager.start should not be called."
+        ),
+    )
+
+    message_called = False
+
+    def fake_add_message(
+        session_id,
+        role,
+        content,
+    ):
+        nonlocal message_called
+        message_called = True
+
+    monkeypatch.setattr(
+        "app.api.runs.add_message",
+        fake_add_message,
+    )
+
+    client = TestClient(app)
+
+    try:
+        response = client.post(
+        "/runs",
+        headers=AUTH_HEADERS,
+            json={
+                "session_id": session_id,
+                "message": "This should be rejected",
+            },
+        )
+
+        assert response.status_code == 409
+
+        assert message_called is False
+
+    finally:
+        delete_run(existing_run_id)
+
+
 @pytest.mark.asyncio
 async def test_cancel_active_run(monkeypatch):
     run_id = f"cancel-job-{uuid.uuid4()}"
@@ -416,6 +802,7 @@ async def test_cancel_active_run(monkeypatch):
     try:
         run = Run(
             id=run_id,
+            user_id=1,
             session_id=session_id,
             prompt="Long running task",
             status="running",
@@ -441,6 +828,7 @@ async def test_cancel_active_run(monkeypatch):
 
     task = RunJobManager.start(
         run_id=run_id,
+            user_id=1,
         session_id=session_id,
         prompt="Long running task",
         history=[],
@@ -498,6 +886,7 @@ def test_cancel_unknown_run():
 
     response = client.post(
         f"/runs/{run_id}/cancel",
+        headers=AUTH_HEADERS,
     )
 
     assert response.status_code == 404
@@ -524,6 +913,7 @@ def test_cancel_finished_run(run_status):
     try:
         run = Run(
             id=run_id,
+            user_id=1,
             session_id=session_id,
             prompt="Finished task",
             status=run_status,
@@ -542,8 +932,9 @@ def test_cancel_finished_run(run_status):
 
     try:
         response = client.post(
-            f"/runs/{run_id}/cancel",
-        )
+        f"/runs/{run_id}/cancel",
+        headers=AUTH_HEADERS,
+    )
 
         assert response.status_code == 409
 
@@ -571,6 +962,7 @@ async def test_cancel_missing_active_task():
     try:
         run = Run(
             id=run_id,
+            user_id=1,
             session_id=session_id,
             prompt="Orphaned task",
             status="running",
@@ -589,8 +981,9 @@ async def test_cancel_missing_active_task():
 
     try:
         response = client.post(
-            f"/runs/{run_id}/cancel",
-        )
+        f"/runs/{run_id}/cancel",
+        headers=AUTH_HEADERS,
+    )
 
         assert response.status_code == 409
 
@@ -603,3 +996,14 @@ async def test_cancel_missing_active_task():
 
     finally:
         delete_run(run_id)
+
+
+
+
+
+
+
+
+
+
+

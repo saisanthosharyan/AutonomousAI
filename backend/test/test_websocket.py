@@ -6,6 +6,15 @@ from fastapi.testclient import TestClient
 from app.database.database import Base, SessionLocal, engine
 from app.database.models import Run
 from app.main import app
+from app.services.auth.service import create_access_token
+
+
+TEST_TOKEN = create_access_token(
+    user_id=1,
+    username="santhosh_test",
+)
+
+WS_URL = "?token=" + TEST_TOKEN
 
 
 # --------------------------------------------------
@@ -43,6 +52,7 @@ def create_test_run(
 
         run = Run(
             id=run_id,
+            user_id=1,
             session_id=session_id,
             prompt="Create a hello world application",
             status=status,
@@ -119,7 +129,7 @@ def test_websocket_restores_latest_run_state():
         client = TestClient(app)
 
         with client.websocket_connect(
-            f"/ws/{session_id}"
+            f"/ws/{session_id}{WS_URL}"
         ) as websocket:
 
             data = websocket.receive_json()
@@ -176,7 +186,7 @@ def test_websocket_without_run_state():
     client = TestClient(app)
 
     with client.websocket_connect(
-        f"/ws/{session_id}"
+        f"/ws/{session_id}{WS_URL}"
     ) as websocket:
 
         websocket.send_text(
@@ -204,7 +214,7 @@ def test_websocket_ping():
     client = TestClient(app)
 
     with client.websocket_connect(
-        f"/ws/{session_id}"
+        f"/ws/{session_id}{WS_URL}"
     ) as websocket:
 
         websocket.send_text(
@@ -216,3 +226,5 @@ def test_websocket_ping():
         )
 
         assert response == "pong"
+
+

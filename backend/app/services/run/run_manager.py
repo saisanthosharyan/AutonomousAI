@@ -5,14 +5,11 @@ from app.database.database import SessionLocal
 
 
 class RunManager:
-    """
-    Persists AutoDev-AI run state.
-    """
-
     @staticmethod
     def update(
         run_id: str,
         *,
+        user_id: int | None = None,
         status: str | None = None,
         current_step: str | None = None,
         progress: int | None = None,
@@ -22,13 +19,13 @@ class RunManager:
         started: bool = False,
         completed: bool = False,
     ) -> None:
-
         db = SessionLocal()
 
         try:
             update_run(
                 db,
                 run_id,
+                user_id=user_id,
                 status=status,
                 current_step=current_step,
                 progress=progress,
@@ -38,6 +35,5 @@ class RunManager:
                 started=started,
                 completed=completed,
             )
-
         finally:
             db.close()

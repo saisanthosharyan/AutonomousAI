@@ -105,6 +105,7 @@ class AgentOrchestrator:
         progress: int,
         message: str,
         run_id: str | None = None,
+        user_id: int | None = None,
     ) -> None:
         """
         Persist and broadcast pipeline progress.
@@ -122,6 +123,7 @@ class AgentOrchestrator:
                 await asyncio.to_thread(
                     RunManager.update,
                     run_id,
+                    user_id=user_id,
                     status=(
                         "completed"
                         if progress >= 100
@@ -166,6 +168,7 @@ class AgentOrchestrator:
     async def _update_run(
         self,
         run_id: str | None,
+        user_id: int | None = None,
         *,
         status: str | None = None,
         current_step: str | None = None,
@@ -187,6 +190,7 @@ class AgentOrchestrator:
             await asyncio.to_thread(
                 RunManager.update,
                 run_id,
+                user_id=user_id,
                 status=status,
                 current_step=current_step,
                 progress=progress,
@@ -205,6 +209,7 @@ class AgentOrchestrator:
     async def _fail_run(
         self,
         run_id: str | None,
+        user_id: int | None,
         error: str,
     ) -> None:
         """
@@ -214,6 +219,7 @@ class AgentOrchestrator:
 
         await self._update_run(
             run_id,
+            user_id,
             status="failed",
             current_step="Failed",
             progress=100,
@@ -365,6 +371,7 @@ class AgentOrchestrator:
         history: list | None = None,
         session_id: str | None = None,
         run_id: str | None = None,
+        user_id: int | None = None,
     ) -> dict[str, Any]:
 
         logger.info("=" * 60)
@@ -380,6 +387,7 @@ class AgentOrchestrator:
 
         await self._update_run(
             run_id,
+            user_id,
             status="running",
             current_step="Starting",
             progress=0,
@@ -417,6 +425,7 @@ class AgentOrchestrator:
             10,
             "Generating implementation plan...",
             run_id,
+            user_id,
         )
 
         stage_start = time.monotonic()
@@ -434,6 +443,7 @@ class AgentOrchestrator:
 
             await self._fail_run(
                 run_id,
+                user_id,
                 str(exc),
             )
 
@@ -450,6 +460,7 @@ class AgentOrchestrator:
 
             await self._fail_run(
                 run_id,
+                user_id,
                 error,
             )
 
@@ -466,6 +477,7 @@ class AgentOrchestrator:
             20,
             "Planning completed.",
             run_id,
+            user_id,
         )
 
         # ======================================================
@@ -482,6 +494,7 @@ class AgentOrchestrator:
             25,
             "Generating source code...",
             run_id,
+            user_id,
         )
 
         stage_start = time.monotonic()
@@ -499,6 +512,7 @@ class AgentOrchestrator:
 
             await self._fail_run(
                 run_id,
+                user_id,
                 str(exc),
             )
 
@@ -515,6 +529,7 @@ class AgentOrchestrator:
 
             await self._fail_run(
                 run_id,
+                user_id,
                 error,
             )
 
@@ -531,6 +546,7 @@ class AgentOrchestrator:
             35,
             "Source code generated.",
             run_id,
+            user_id,
         )
 
         # ======================================================
@@ -547,6 +563,7 @@ class AgentOrchestrator:
             40,
             "Creating project structure...",
             run_id,
+            user_id,
         )
 
         stage_start = time.monotonic()
@@ -564,6 +581,7 @@ class AgentOrchestrator:
 
             await self._fail_run(
                 run_id,
+                user_id,
                 str(exc),
             )
 
@@ -580,6 +598,7 @@ class AgentOrchestrator:
 
             await self._fail_run(
                 run_id,
+                user_id,
                 error,
             )
 
@@ -592,6 +611,7 @@ class AgentOrchestrator:
 
             await self._fail_run(
                 run_id,
+                user_id,
                 error,
             )
 
@@ -604,6 +624,7 @@ class AgentOrchestrator:
 
             await self._fail_run(
                 run_id,
+                user_id,
                 error,
             )
 
@@ -620,6 +641,7 @@ class AgentOrchestrator:
             50,
             "Project built successfully.",
             run_id,
+            user_id,
         )
 
         # ======================================================
@@ -636,6 +658,7 @@ class AgentOrchestrator:
             55,
             "Executing generated project...",
             run_id,
+            user_id,
         )
 
         stage_start = time.monotonic()
@@ -690,6 +713,7 @@ class AgentOrchestrator:
 
                 await self._fail_run(
                     run_id,
+                    user_id,
                     error,
                 )
 
@@ -745,6 +769,7 @@ class AgentOrchestrator:
                 "Automated tests cannot verify the project."
             ),
             run_id,
+            user_id,
         )
 
         # ======================================================
@@ -781,6 +806,7 @@ class AgentOrchestrator:
             70,
             "Running automated tests and self-healing failures...",
             run_id,
+            user_id,
         )
 
         stage_start = time.monotonic()
@@ -901,6 +927,7 @@ class AgentOrchestrator:
                 "Automated tests failed or were skipped."
             ),
             run_id,
+            user_id,
         )
 
         # ======================================================
@@ -923,6 +950,7 @@ class AgentOrchestrator:
             82,
             "Validating final repaired project...",
             run_id,
+            user_id,
         )
 
         stage_start = time.monotonic()
@@ -950,6 +978,7 @@ class AgentOrchestrator:
                 "Final project validation reported issues."
             ),
             run_id,
+            user_id,
         )
 
         # ======================================================
@@ -969,6 +998,7 @@ class AgentOrchestrator:
             88,
             "Reviewing final repaired source code...",
             run_id,
+            user_id,
         )
 
         stage_start = time.monotonic()
@@ -991,6 +1021,7 @@ class AgentOrchestrator:
             90,
             "Final AI review completed.",
             run_id,
+            user_id,
         )
 
         # ======================================================
@@ -1007,6 +1038,7 @@ class AgentOrchestrator:
             92,
             "Evaluating final project state...",
             run_id,
+            user_id,
         )
 
         stage_start = time.monotonic()
@@ -1048,6 +1080,7 @@ class AgentOrchestrator:
             95,
             "Final evaluation completed.",
             run_id,
+            user_id,
         )
 
         # ======================================================
@@ -1064,6 +1097,7 @@ class AgentOrchestrator:
             97,
             "Saving final project information...",
             run_id,
+            user_id,
         )
 
         stage_start = time.monotonic()
@@ -1073,6 +1107,7 @@ class AgentOrchestrator:
         try:
             create_project(
                 db=db,
+                user_id=user_id,
                 session_id=session_id or "default",
                 title=plan.title,
                 prompt=task,
@@ -1111,6 +1146,7 @@ class AgentOrchestrator:
             99,
             "Finalizing project result...",
             run_id,
+            user_id,
         )
 
         pipeline_time = (
@@ -1237,6 +1273,7 @@ class AgentOrchestrator:
 
         await self._update_run(
             run_id,
+            user_id,
             status=(
                 "completed"
                 if final_success
@@ -1255,3 +1292,7 @@ class AgentOrchestrator:
         )
 
         return final_result
+
+
+
+

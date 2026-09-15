@@ -4,6 +4,17 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.models.task import Task
+from app.services.auth.service import create_access_token
+
+
+TEST_TOKEN = create_access_token(
+    user_id=1,
+    username="santhosh_test",
+)
+
+AUTH_HEADERS = {
+    "Authorization": f"Bearer {TEST_TOKEN}",
+}
 
 
 class FakeLLM:
@@ -175,6 +186,7 @@ def test_chat_full_pipeline(tmp_path):
 
         response = client.post(
             "/chat",
+            headers=AUTH_HEADERS,
             json={
                 "session_id": "integration-test-session",
                 "message": (
@@ -270,3 +282,5 @@ def test_chat_full_pipeline(tmp_path):
     # ------------------------------------------------------------------
 
     assert data["success"] is True
+
+

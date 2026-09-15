@@ -12,11 +12,13 @@ from app.database.crud import recover_stale_runs
 
 from app.services.llm.router import LLMRouter
 
+from app.api.auth import router as auth_router
 from app.api.chat import router as chat_router
 from app.api.download import router as download_router
 from app.api.projects import router as projects_router
 from app.api.ws import router as ws_router
 from app.api.runs import router as runs_router
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -27,7 +29,6 @@ async def lifespan(app: FastAPI):
     )
     logger.info("=" * 60)
 
-    # Database
     try:
 
         Base.metadata.create_all(
@@ -38,13 +39,22 @@ async def lifespan(app: FastAPI):
             "Database initialized successfully."
         )
 
+        db = SessionLocal()
+
+        try:
+
+            recover_stale_runs(db)
+
+        finally:
+
+            db.close()
+
     except Exception:
 
         logger.exception(
             "Database initialization failed."
         )
 
-    # LLM
     try:
 
         LLMRouter.get_llm()
@@ -92,6 +102,10 @@ app.add_middleware(
 
 
 app.include_router(
+    auth_router
+)
+
+app.include_router(
     chat_router
 )
 
@@ -106,9 +120,11 @@ app.include_router(
 app.include_router(
     ws_router
 )
+
 app.include_router(
     runs_router
 )
+
 
 @app.get("/")
 async def root():
@@ -153,5 +169,3 @@ async def current_llm():
             "Unknown",
         ),
     }
-
-

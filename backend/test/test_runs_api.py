@@ -6,18 +6,32 @@ from fastapi.testclient import TestClient
 from app.database.database import Base, SessionLocal, engine
 from app.database.models import Run
 from app.main import app
+from app.services.auth.service import create_access_token
 
 
-# --------------------------------------------------
-# Test Database Setup
-# --------------------------------------------------
+from app.services.auth.service import create_access_token
+
+
+TEST_TOKEN = create_access_token(
+    user_id=1,
+    username="santhosh_test",
+)
+
+AUTH_HEADERS = {
+    "Authorization": f"Bearer {TEST_TOKEN}",
+}
+
+TEST_TOKEN = create_access_token(
+    user_id=1,
+    username="santhosh_test",
+)
+
+AUTH_HEADERS = {
+    "Authorization": f"Bearer {TEST_TOKEN}",
+}
+
 
 Base.metadata.create_all(bind=engine)
-
-
-# --------------------------------------------------
-# Helpers
-# --------------------------------------------------
 
 
 def create_test_run(
@@ -34,14 +48,13 @@ def create_test_run(
     try:
         run = Run(
             id=run_id,
+            user_id=1,
             session_id=session_id,
             prompt="Create a hello world application",
             status="completed",
             current_step="Completed",
             progress=100,
-            message=(
-                "Project generation completed successfully."
-            ),
+            message="Project generation completed successfully.",
             result='{"success": true, "score": 0.9}',
             error=None,
             created_at=now,
@@ -97,11 +110,6 @@ def delete_test_runs_by_session(session_id):
         db.close()
 
 
-# --------------------------------------------------
-# Get Single Run
-# --------------------------------------------------
-
-
 def test_get_run():
     run_id = f"test-get-run-{uuid.uuid4()}"
 
@@ -114,7 +122,8 @@ def test_get_run():
         client = TestClient(app)
 
         response = client.get(
-            f"/runs/{run_id}"
+            f"/runs/{run_id}",
+            headers=AUTH_HEADERS,
         )
 
         assert response.status_code == 200
@@ -127,15 +136,9 @@ def test_get_run():
 
         assert run["run_id"] == run_id
 
-        assert (
-            run["session_id"]
-            == "single-run-session"
-        )
+        assert run["session_id"] == "single-run-session"
 
-        assert (
-            run["status"]
-            == "completed"
-        )
+        assert run["status"] == "completed"
 
         assert run["current_step"] == "Completed"
         assert run["progress"] == 100
@@ -145,15 +148,9 @@ def test_get_run():
             == "Project generation completed successfully."
         )
 
-        assert (
-            run["result"]["success"]
-            is True
-        )
+        assert run["result"]["success"] is True
 
-        assert (
-            run["result"]["score"]
-            == 0.9
-        )
+        assert run["result"]["score"] == 0.9
 
         assert run["error"] is None
 
@@ -166,37 +163,23 @@ def test_get_run():
         delete_test_run(run_id)
 
 
-# --------------------------------------------------
-# Get Missing Run
-# --------------------------------------------------
-
-
 def test_get_missing_run():
     client = TestClient(app)
 
     response = client.get(
-        f"/runs/non-existent-{uuid.uuid4()}"
+        f"/runs/non-existent-{uuid.uuid4()}",
+        headers=AUTH_HEADERS,
     )
 
     assert response.status_code == 404
 
     data = response.json()
 
-    assert (
-        data["detail"]
-        == "Run not found."
-    )
-
-
-# --------------------------------------------------
-# Get Runs By Session
-# --------------------------------------------------
+    assert data["detail"] == "Run not found."
 
 
 def test_get_runs_by_session():
-    session_id = (
-        f"history-session-{uuid.uuid4()}"
-    )
+    session_id = f"history-session-{uuid.uuid4()}"
 
     run_id_1 = f"history-run-1-{uuid.uuid4()}"
     run_id_2 = f"history-run-2-{uuid.uuid4()}"
@@ -215,7 +198,8 @@ def test_get_runs_by_session():
         client = TestClient(app)
 
         response = client.get(
-            f"/runs/session/{session_id}"
+            f"/runs/session/{session_id}",
+            headers=AUTH_HEADERS,
         )
 
         assert response.status_code == 200
@@ -237,38 +221,24 @@ def test_get_runs_by_session():
         assert run_id_2 in run_ids
 
         for run in data["runs"]:
-            assert (
-                run["session_id"]
-                == session_id
-            )
+            assert run["session_id"] == session_id
 
-            assert (
-                run["status"]
-                == "completed"
-            )
+            assert run["status"] == "completed"
 
             assert run["progress"] == 100
 
     finally:
-        delete_test_runs_by_session(
-            session_id
-        )
-
-
-# --------------------------------------------------
-# Empty Session
-# --------------------------------------------------
+        delete_test_runs_by_session(session_id)
 
 
 def test_get_runs_empty_session():
-    session_id = (
-        f"empty-session-{uuid.uuid4()}"
-    )
+    session_id = f"empty-session-{uuid.uuid4()}"
 
     client = TestClient(app)
 
     response = client.get(
-        f"/runs/session/{session_id}"
+        f"/runs/session/{session_id}",
+        headers=AUTH_HEADERS,
     )
 
     assert response.status_code == 200
@@ -278,3 +248,22 @@ def test_get_runs_empty_session():
     assert data["success"] is True
     assert data["count"] == 0
     assert data["runs"] == []
+
+
+def test_get_all_runs():
+    client = TestClient(app)
+
+    response = client.get(
+        "/runs/",
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["success"] is True
+    assert "count" in data
+    assert "runs" in data
+    assert isinstance(data["runs"], list)
+    assert data["count"] == len(data["runs"])

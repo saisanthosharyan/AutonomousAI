@@ -64,3 +64,7 @@ urllib3==2.7.0
 uvicorn==0.30.6
 watchfiles==1.2.0
 websockets==16.0
+PyJWT==2.14.0
+
+passlib==1.7.4
+bcrypt==3.2.2

@@ -1,4 +1,5 @@
 from datetime import datetime, UTC
+
 from sqlalchemy import Column
 from sqlalchemy import DateTime
 from sqlalchemy import Integer
@@ -6,6 +7,41 @@ from sqlalchemy import String
 from sqlalchemy import Text
 
 from .database import Base
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True,
+    )
+
+    username = Column(
+        String(100),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+
+    email = Column(
+        String(255),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+
+    password_hash = Column(
+        String(255),
+        nullable=False,
+    )
+
+    created_at = Column(
+        DateTime,
+        default=lambda: datetime.now(UTC).replace(tzinfo=None),
+        nullable=False,
+    )
 
 
 class Project(Base):
@@ -18,6 +54,12 @@ class Project(Base):
     id = Column(
         Integer,
         primary_key=True,
+        index=True,
+    )
+
+    user_id = Column(
+        Integer,
+        nullable=False,
         index=True,
     )
 
@@ -52,6 +94,8 @@ class Project(Base):
         default=lambda: datetime.now(UTC).replace(tzinfo=None),
         nullable=False,
     )
+
+
 class Run(Base):
     """
     Stores the lifecycle and progress state of an AutoDev-AI execution.
@@ -62,6 +106,12 @@ class Run(Base):
     id = Column(
         String(100),
         primary_key=True,
+        index=True,
+    )
+
+    user_id = Column(
+        Integer,
+        nullable=False,
         index=True,
     )
 

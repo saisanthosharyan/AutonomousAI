@@ -1,5 +1,5 @@
-import uuid
 import json
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -9,15 +9,17 @@ from app.core.logger import logger
 from app.database.crud import (
     create_run,
     get_run,
+    get_runs,
     get_runs_by_session,
     update_run,
 )
 from app.database.database import SessionLocal, get_db
+from app.database.models import User
 from app.memory.conversation_cache import (
     add_message,
     get_history,
 )
-from app.services.llm.router import LLMRouter
+from app.services.auth.dependencies import get_current_user
 from app.services.run.job_manager import RunJobManager
 
 
@@ -27,31 +29,18 @@ router = APIRouter(
 )
 
 
-# --------------------------------------------------
-# Request Models
-# --------------------------------------------------
-
-
 class CreateRunRequest(BaseModel):
     session_id: str = Field(..., min_length=1)
     message: str = Field(..., min_length=1)
-
     provider: str | None = None
-
     api_key: str | None = Field(
         default=None,
         min_length=1,
     )
-
     model: str | None = Field(
         default=None,
         min_length=1,
     )
-
-
-# --------------------------------------------------
-# Serialization
-# --------------------------------------------------
 
 
 def serialize_run(run):
@@ -76,9 +65,27 @@ def serialize_run(run):
     }
 
 
-# --------------------------------------------------
-# Create Background Run
-# --------------------------------------------------
+def get_active_run_for_session(
+    db: Session,
+    session_id: str,
+    user_id: int,
+):
+    runs = get_runs_by_session(
+        db,
+        session_id,
+        user_id,
+    )
+
+    active_statuses = {
+        "queued",
+        "running",
+    }
+
+    for run in runs:
+        if run.status in active_statuses:
+            return run
+
+    return None
 
 
 @router.post(
@@ -87,41 +94,66 @@ def serialize_run(run):
 )
 async def create_background_run(
     request: CreateRunRequest,
+    current_user: User = Depends(get_current_user),
 ):
-
-    run_id = str(uuid.uuid4())
-
-    history = get_history(
-        request.session_id
-    )
-
-    add_message(
-        request.session_id,
-        "user",
-        request.message,
-    )
-
     db = SessionLocal()
 
     try:
-        create_run(
-            db=db,
-            run_id=run_id,
-            session_id=request.session_id,
-            prompt=request.message,
+        active_run = get_active_run_for_session(
+            db,
+            request.session_id,
+            current_user.id,
         )
 
-    except Exception:
-        db.rollback()
-        logger.exception(
-            "Failed to create run: %s",
-            run_id,
+        if active_run is not None:
+            logger.warning(
+                "Rejected duplicate active run for user %s "
+                "and session %s. Existing run: %s",
+                current_user.id,
+                request.session_id,
+                active_run.id,
+            )
+
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "An active run already exists for this session."
+                ),
+            )
+
+        run_id = str(uuid.uuid4())
+
+        history = get_history(
+            request.session_id,
         )
 
-        raise HTTPException(
-            status_code=500,
-            detail="Unable to create run.",
+        add_message(
+            request.session_id,
+            "user",
+            request.message,
         )
+
+        try:
+            create_run(
+                db=db,
+                user_id=current_user.id,
+                run_id=run_id,
+                session_id=request.session_id,
+                prompt=request.message,
+            )
+
+        except Exception:
+            db.rollback()
+
+            logger.exception(
+                "Failed to create run: %s",
+                run_id,
+            )
+
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Unable to create run.",
+            )
 
     finally:
         db.close()
@@ -129,6 +161,7 @@ async def create_background_run(
     try:
         RunJobManager.start(
             run_id=run_id,
+            user_id=current_user.id,
             session_id=request.session_id,
             prompt=request.message,
             history=history,
@@ -149,6 +182,7 @@ async def create_background_run(
             update_run(
                 db,
                 run_id,
+                user_id=current_user.id,
                 status="failed",
                 current_step="Failed",
                 progress=100,
@@ -161,13 +195,14 @@ async def create_background_run(
             db.close()
 
         raise HTTPException(
-            status_code=500,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unable to schedule run.",
         )
 
     logger.info(
-        "Created background AutoDev-AI run: %s",
+        "Created background AutoDev-AI run %s for user %s",
         run_id,
+        current_user.id,
     )
 
     return {
@@ -179,20 +214,10 @@ async def create_background_run(
     }
 
 
-# --------------------------------------------------
-# Get Runs By Session
-# --------------------------------------------------
-
-
-
-# --------------------------------------------------
-# Cancel Run
-# --------------------------------------------------
-
-
 @router.post("/{run_id}/cancel")
 async def cancel_run(
     run_id: str,
+    current_user: User = Depends(get_current_user),
 ):
     db = SessionLocal()
 
@@ -200,11 +225,12 @@ async def cancel_run(
         run = get_run(
             db,
             run_id,
+            current_user.id,
         )
 
         if run is None:
             raise HTTPException(
-                status_code=404,
+                status_code=status.HTTP_404_NOT_FOUND,
                 detail="Run not found.",
             )
 
@@ -214,7 +240,7 @@ async def cancel_run(
             "cancelled",
         }:
             raise HTTPException(
-                status_code=409,
+                status_code=status.HTTP_409_CONFLICT,
                 detail=(
                     "Run cannot be cancelled because "
                     f"it is already {run.status}."
@@ -223,21 +249,27 @@ async def cancel_run(
 
         cancelled = RunJobManager.cancel(
             run_id,
+            current_user.id,
         )
 
         if not cancelled:
             current_run = get_run(
                 db,
                 run_id,
+                current_user.id,
             )
 
-            if current_run is not None and current_run.status in {
-                "completed",
-                "failed",
-                "cancelled",
-            }:
+            if (
+                current_run is not None
+                and current_run.status
+                in {
+                    "completed",
+                    "failed",
+                    "cancelled",
+                }
+            ):
                 raise HTTPException(
-                    status_code=409,
+                    status_code=status.HTTP_409_CONFLICT,
                     detail=(
                         "Run finished before cancellation "
                         "could be applied."
@@ -245,7 +277,7 @@ async def cancel_run(
                 )
 
             raise HTTPException(
-                status_code=409,
+                status_code=status.HTTP_409_CONFLICT,
                 detail="Run is not currently active.",
             )
 
@@ -266,22 +298,23 @@ async def cancel_run(
         )
 
         raise HTTPException(
-            status_code=500,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unable to cancel run.",
         )
 
     finally:
         db.close()
 
-@router.get("/session/{session_id}")
-def session_runs(
-    session_id: str,
+
+@router.get("/")
+def list_runs(
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     try:
-        runs = get_runs_by_session(
+        runs = get_runs(
             db,
-            session_id,
+            current_user.id,
         )
 
         return {
@@ -295,34 +328,66 @@ def session_runs(
 
     except Exception:
         logger.exception(
-            "Failed to retrieve session runs."
+            "Failed to fetch runs for user %s.",
+            current_user.id,
         )
 
         raise HTTPException(
-            status_code=500,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unable to retrieve runs.",
         )
 
 
-# --------------------------------------------------
-# Get Single Run
-# --------------------------------------------------
+@router.get("/session/{session_id}")
+def session_runs(
+    session_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        runs = get_runs_by_session(
+            db,
+            session_id,
+            current_user.id,
+        )
+
+        return {
+            "success": True,
+            "count": len(runs),
+            "runs": [
+                serialize_run(run)
+                for run in runs
+            ],
+        }
+
+    except Exception:
+        logger.exception(
+            "Failed to retrieve runs for user %s.",
+            current_user.id,
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to retrieve runs.",
+        )
 
 
 @router.get("/{run_id}")
 def run_details(
     run_id: str,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     try:
         run = get_run(
             db,
             run_id,
+            current_user.id,
         )
 
         if run is None:
             raise HTTPException(
-                status_code=404,
+                status_code=status.HTTP_404_NOT_FOUND,
                 detail="Run not found.",
             )
 
@@ -340,10 +405,6 @@ def run_details(
         )
 
         raise HTTPException(
-            status_code=500,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unable to retrieve run.",
         )
-
-
-
-

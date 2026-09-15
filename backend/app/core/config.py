@@ -17,7 +17,8 @@ class Settings(BaseSettings):
 
     HOST: str = "0.0.0.0"
     PORT: int = 8000
-
+    SECRET_KEY: str
+    JWT_EXPIRATION_HOURS: int = 24
     # --------------------------------------------------
     # LLM Configuration
     # --------------------------------------------------
@@ -37,11 +38,12 @@ class Settings(BaseSettings):
     # Database
     # --------------------------------------------------
 
-    DATABASE_URL: str = "sqlite:///./autodev.db"
+    DATABASE_URL: str = "sqlite:///../autodev.db"
 
     # --------------------------------------------------
     # Vector Database
     # --------------------------------------------------
+
 
     CHROMA_DB_PATH: str = "./chroma_db"
 
@@ -75,7 +77,7 @@ class Settings(BaseSettings):
     # --------------------------------------------------
 
     model_config = SettingsConfigDict(
-        env_file="backend/.env",
+        env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )

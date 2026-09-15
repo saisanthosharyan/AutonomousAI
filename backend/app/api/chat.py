@@ -3,13 +3,15 @@ from pathlib import Path
 from typing import Literal
 from app.services.llm.router import LLMRouter
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.agents.orchestrator import AgentOrchestrator
 from app.core.logger import logger
 from app.database.crud import create_run
 from app.database.database import SessionLocal
+from app.database.models import User
+from app.services.auth.dependencies import get_current_user
 from app.memory.conversation_cache import (
     add_message,
     get_history,
@@ -50,7 +52,10 @@ class ChatRequest(BaseModel):
 
 
 @router.post("/chat")
-async def chat(request: ChatRequest):
+async def chat(
+    request: ChatRequest,
+    current_user: User = Depends(get_current_user),
+):
 
     try:
 
@@ -82,6 +87,7 @@ async def chat(request: ChatRequest):
 
             create_run(
                 db=db,
+                user_id=current_user.id,
                 run_id=run_id,
                 session_id=request.session_id,
                 prompt=request.message,
@@ -110,6 +116,7 @@ async def chat(request: ChatRequest):
             history=history,
             session_id=request.session_id,
             run_id=run_id,
+            user_id=current_user.id,
         )
 
         # ------------------------------------------
