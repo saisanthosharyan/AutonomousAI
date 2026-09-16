@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
+const AUTH_TOKEN_KEY = "autodev_access_token";
+
 export default function useWebSocket(sessionId) {
   const [runState, setRunState] = useState(null);
   const [events, setEvents] = useState([]);
@@ -12,8 +14,15 @@ export default function useWebSocket(sessionId) {
       return;
     }
 
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+
+    if (!token) {
+      setConnected(false);
+      return;
+    }
+
     const socket = new WebSocket(
-      `ws://127.0.0.1:8000/ws/${sessionId}`
+      `ws://127.0.0.1:8000/ws/${sessionId}?token=${encodeURIComponent(token)}`
     );
 
     ws.current = socket;
@@ -129,8 +138,16 @@ export default function useWebSocket(sessionId) {
     };
 
     return () => {
-      socket.close();
-      ws.current = null;
+      if (
+        socket.readyState === WebSocket.OPEN ||
+        socket.readyState === WebSocket.CONNECTING
+      ) {
+        socket.close();
+      }
+
+      if (ws.current === socket) {
+        ws.current = null;
+      }
     };
   }, [sessionId]);
 
