@@ -136,6 +136,7 @@ class ProjectBuilder:
                 project_path
             ),
             "zip_path": zip_path,
+            "download_url": f"/download/{Path(zip_path).name}",
             "files": created_files,
             "file_count": len(
                 created_files
@@ -201,6 +202,7 @@ class ProjectBuilder:
         return {
             "project_path": str(project),
             "zip_path": zip_path,
+            "download_url": f"/download/{Path(zip_path).name}",
             "files": updated_files,
             "file_count": len(updated_files),
         }

@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     LLM_PRIORITY: str = "gemini,openai,ollama"
 
     OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "qwen2.5:3b"
+    OLLAMA_MODEL: str = "qwen2.5-coder:7b"
 
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4.1-mini"

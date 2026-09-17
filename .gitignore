@@ -93,3 +93,9 @@ backend/project_tree.txt
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Runtime memory
+memory/
+
+# Backup files
+*.backup

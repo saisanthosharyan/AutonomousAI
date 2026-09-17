@@ -15,6 +15,7 @@ from app.services.llm.router import LLMRouter
 from app.api.auth import router as auth_router
 from app.api.chat import router as chat_router
 from app.api.download import router as download_router
+from app.api.preview import router as preview_router
 from app.api.projects import router as projects_router
 from app.api.ws import router as ws_router
 from app.api.runs import router as runs_router
@@ -94,6 +95,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -112,6 +115,8 @@ app.include_router(
 app.include_router(
     download_router
 )
+app.include_router(preview_router)
+
 
 app.include_router(
     projects_router

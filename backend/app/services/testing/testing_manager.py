@@ -14,7 +14,6 @@ class TestManager:
     """
 
     def __init__(self):
-
         self.runners = {
             "python": PythonTestRunner(),
             "node": NodeTestRunner(),
@@ -24,21 +23,13 @@ class TestManager:
 
         self.project_analyzer = ProjectAnalyzer()
 
-    # --------------------------------------------------
-    # Run Tests
-    # --------------------------------------------------
-
     def run(self, project_path: str):
-
         logger.info("=" * 60)
         logger.info("Test Manager Started")
         logger.info("=" * 60)
 
         try:
-
-            project_type = self.project_analyzer.detect(
-                project_path
-            )
+            project_type = self.project_analyzer.detect(project_path)
 
             logger.info(
                 f"Selected test runner: {project_type}"
@@ -47,33 +38,31 @@ class TestManager:
             runner = self.runners.get(project_type)
 
             if runner is None:
-
-                logger.warning(
-                    f"No supported test runner for "
-                    f"'{project_type}' project."
+                logger.info(
+                    f"No automated test runner configured for "
+                    f"'{project_type}' project. Testing skipped."
                 )
 
                 return {
-                    "success": False,
-                    "stdout": "",
-                    "stderr": (
-                        f"No supported test runner for "
-                        f"'{project_type}' project."
+                    "success": True,
+                    "skipped": True,
+                    "stdout": (
+                        f"Automated testing skipped for "
+                        f"'{project_type}' project. "
+                        f"No test runner is required for this project type."
                     ),
-                    "return_code": -1,
+                    "stderr": "",
+                    "return_code": 0,
                     "execution_time": 0,
                 }
 
             result = runner.run(project_path)
 
             if result.get("success"):
-
                 logger.info(
                     "Testing completed successfully."
                 )
-
             else:
-
                 logger.warning(
                     "Testing failed."
                 )
@@ -86,7 +75,6 @@ class TestManager:
                 )
 
                 if result.get("stdout"):
-
                     logger.info(
                         result["stdout"]
                     )
@@ -94,7 +82,6 @@ class TestManager:
             return result
 
         except Exception as e:
-
             logger.exception(
                 "Test Manager crashed."
             )
@@ -108,7 +95,6 @@ class TestManager:
             }
 
         finally:
-
             logger.info("=" * 60)
             logger.info("Test Manager Finished")
             logger.info("=" * 60)

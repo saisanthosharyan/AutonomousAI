@@ -1,19 +1,31 @@
 from pathlib import Path
 
 from app.core.logger import logger
+from app.project.project_analyzer import ProjectAnalyzer
 
 
 class ProjectValidator:
     """
-    Validates the generated project structure before returning
-    it to the user.
+    Validates generated projects according to their detected project type.
 
-    The validator supports projects where the actual application
-    is either:
+    Supported behavior:
 
-    1. Directly inside project_path
-    2. Inside a single nested folder such as:
-       project_path/calculator_app/
+    - static_web:
+        README.md and .gitignore are required.
+        index.html is required.
+        CSS/JS assets are validated through the project analyzer.
+        Dependency files are optional.
+
+    - python:
+        requirements.txt, pyproject.toml, or another supported dependency
+        file is expected.
+
+    - node:
+        package.json is expected.
+
+    - java/cpp:
+        Dependency manifests are optional because these projects may use
+        native/build-tool configurations instead.
     """
 
     REQUIRED_FILES = [
@@ -21,12 +33,10 @@ class ProjectValidator:
         ".gitignore",
     ]
 
-    REQUIRED_ANY = [
-        [
-            "requirements.txt",
-            "package.json",
-            "pyproject.toml",
-        ]
+    DEPENDENCY_FILES = [
+        "requirements.txt",
+        "package.json",
+        "pyproject.toml",
     ]
 
     SOURCE_PATTERNS = [
@@ -37,69 +47,75 @@ class ProjectValidator:
         "*.cpp",
     ]
 
-    def _has_required_files(self, path: Path) -> bool:
-        """
-        Check whether a directory contains the basic required files.
-        """
+    def __init__(self):
+        self.project_analyzer = ProjectAnalyzer()
 
+    def _has_required_files(self, path: Path) -> bool:
         return all(
             (path / file).exists()
             for file in self.REQUIRED_FILES
         )
 
     def _has_dependency_file(self, path: Path) -> bool:
-        """
-        Check whether a supported dependency file exists.
-        """
-
         return any(
             (path / item).exists()
-            for group in self.REQUIRED_ANY
-            for item in group
+            for item in self.DEPENDENCY_FILES
         )
 
     def _has_source_files(self, path: Path) -> bool:
-        """
-        Check whether the project contains at least one source file.
-        """
-
         return any(
             any(path.rglob(pattern))
             for pattern in self.SOURCE_PATTERNS
         )
 
+    def _is_static_web_project(self, path: Path) -> bool:
+        return (
+            (path / "index.html").exists()
+            and any(path.rglob("*.html"))
+        )
+
+    def _detect_project_type(self, path: Path) -> str:
+        try:
+            detected = self.project_analyzer.detect(str(path))
+
+            if detected:
+                return str(detected).lower()
+
+        except Exception as exc:
+            logger.warning(
+                f"Project type detection failed: {exc}"
+            )
+
+        if self._is_static_web_project(path):
+            return "static_web"
+
+        return "unknown"
+
     def _detect_project_root(self, project: Path) -> Path:
         """
         Detect the actual project root.
 
-        Handles both structures:
+        Handles both:
 
         project/
-        ├── README.md
-        ├── .gitignore
-        ├── requirements.txt
-        └── src/
+            README.md
+            .gitignore
+            index.html
 
-        OR:
+        and:
 
         project/
-        └── calculator_app/
-            ├── README.md
-            ├── .gitignore
-            ├── requirements.txt
-            ├── src/
-            └── tests/
+            my_app/
+                README.md
+                .gitignore
+                index.html
         """
-
-        # --------------------------------------------------
-        # Case 1:
-        # Project files are directly inside project_path
-        # --------------------------------------------------
 
         if (
             self._has_required_files(project)
             or self._has_dependency_file(project)
             or self._has_source_files(project)
+            or self._is_static_web_project(project)
         ):
             logger.info(
                 f"Project files found directly in: {project}"
@@ -107,41 +123,27 @@ class ProjectValidator:
 
             return project
 
-        # --------------------------------------------------
-        # Case 2:
-        # Project is inside a nested directory
-        # --------------------------------------------------
-
         try:
             subdirectories = [
                 item
                 for item in project.iterdir()
                 if item.is_dir()
-                if (
-                    item.is_dir()
-                    and not item.name.startswith(".")
-                    and item.name not in {
-                        "__pycache__",
-                        "venv",
-                        "node_modules",
-                    }
-                )
+                and not item.name.startswith(".")
+                and item.name not in {
+                    "__pycache__",
+                    "venv",
+                    "node_modules",
+                }
             ]
 
-        except OSError as e:
-
+        except OSError as exc:
             logger.warning(
-                f"Unable to inspect project directory: {e}"
+                f"Unable to inspect project directory: {exc}"
             )
 
             return project
 
-        # --------------------------------------------------
-        # Look for the actual project directory
-        # --------------------------------------------------
-
         for subdirectory in subdirectories:
-
             has_required = self._has_required_files(
                 subdirectory
             )
@@ -154,22 +156,22 @@ class ProjectValidator:
                 subdirectory
             )
 
+            is_static_web = self._is_static_web_project(
+                subdirectory
+            )
+
             if (
                 has_required
                 or has_dependency
                 or has_source
+                or is_static_web
             ):
-
                 logger.info(
                     f"Detected nested project root: "
                     f"{subdirectory}"
                 )
 
                 return subdirectory
-
-        # --------------------------------------------------
-        # If nothing specific is found, keep original root
-        # --------------------------------------------------
 
         logger.warning(
             "Could not detect nested project root. "
@@ -178,6 +180,69 @@ class ProjectValidator:
 
         return project
 
+    def _validate_dependency_file(
+        self,
+        project_root: Path,
+        project_type: str,
+        report: dict,
+    ) -> None:
+        """
+        Validate dependency manifests according to project type.
+        """
+
+        if project_type == "static_web":
+            logger.info(
+                "Static web project detected. "
+                "Dependency file requirement skipped."
+            )
+            return
+
+        if project_type == "node":
+            required_files = ["package.json"]
+
+        elif project_type == "python":
+            required_files = [
+                "requirements.txt",
+                "pyproject.toml",
+            ]
+
+        elif project_type in {"java", "cpp"}:
+            logger.info(
+                f"{project_type} project detected. "
+                "Dependency manifest is optional."
+            )
+            return
+
+        else:
+            required_files = self.DEPENDENCY_FILES
+
+        dependency_exists = any(
+            (project_root / item).exists()
+            for item in required_files
+        )
+
+        if dependency_exists:
+            logger.info(
+                "Required dependency configuration "
+                "detected successfully."
+            )
+            return
+
+        dependency_message = " OR ".join(
+            required_files
+        )
+
+        logger.warning(
+            "Missing dependency file: "
+            f"{dependency_message}"
+        )
+
+        report["missing_files"].append(
+            dependency_message
+        )
+
+        report["score"] -= 10
+
     def validate(
         self,
         project_path: str,
@@ -185,12 +250,9 @@ class ProjectValidator:
         """
         Validate a generated project.
 
-        Args:
-            project_path: Path to the generated project.
-
         Returns:
             Dictionary containing validation status,
-            score, missing files, and warnings.
+            score, missing files, warnings, and project type.
         """
 
         project = Path(project_path).resolve()
@@ -208,16 +270,11 @@ class ProjectValidator:
             "score": 100,
             "missing_files": [],
             "warnings": [],
+            "project_type": "unknown",
         }
 
         try:
-
-            # ==================================================
-            # Check project directory
-            # ==================================================
-
             if not project.exists():
-
                 logger.error(
                     "Project directory does not exist."
                 )
@@ -227,13 +284,12 @@ class ProjectValidator:
                     "score": 0,
                     "missing_files": [],
                     "warnings": [
-                        f"Project folder does not exist: "
-                        f"{project}"
+                        f"Project folder does not exist: {project}"
                     ],
+                    "project_type": "unknown",
                 }
 
             if not project.is_dir():
-
                 logger.error(
                     "Provided project path is not a directory."
                 )
@@ -243,20 +299,16 @@ class ProjectValidator:
                     "score": 0,
                     "missing_files": [],
                     "warnings": [
-                        f"Project path is not a directory: "
-                        f"{project}"
+                        f"Project path is not a directory: {project}"
                     ],
+                    "project_type": "unknown",
                 }
-
-            # ==================================================
-            # Detect actual project root
-            # ==================================================
 
             project_root = self._detect_project_root(
                 project
             )
-            if not any(project_root.iterdir()):
 
+            if not any(project_root.iterdir()):
                 logger.error(
                     "Project directory is empty."
                 )
@@ -268,22 +320,34 @@ class ProjectValidator:
                     "warnings": [
                         "Project directory is empty."
                     ],
+                    "project_type": "unknown",
                 }
 
             logger.info(
                 f"Using validation root: {project_root}"
             )
 
-            # ==================================================
-            # Required Files
-            # ==================================================
+            project_type = self._detect_project_type(
+                project_root
+            )
+
+            report["project_type"] = project_type
+
+            logger.info(
+                f"Detected project type: {project_type}"
+            )
+
+            if project_type == "unknown":
+                if self._is_static_web_project(
+                    project_root
+                ):
+                    project_type = "static_web"
+                    report["project_type"] = project_type
 
             for file in self.REQUIRED_FILES:
-
                 file_path = project_root / file
 
                 if not file_path.exists():
-
                     logger.warning(
                         f"Missing file: {file}"
                     )
@@ -294,46 +358,41 @@ class ProjectValidator:
 
                     report["score"] -= 10
 
-            # ==================================================
-            # Dependency File
-            # ==================================================
+            if project_type == "static_web":
+                index_file = project_root / "index.html"
 
-            for group in self.REQUIRED_ANY:
-
-                dependency_exists = any(
-                    (
-                        project_root / item
-                    ).exists()
-                    for item in group
-                )
-
-                if not dependency_exists:
-
-                    dependency_message = (
-                        " OR ".join(group)
-                    )
-
+                if not index_file.exists():
                     logger.warning(
-                        "Missing dependency file: "
-                        f"{dependency_message}"
+                        "Missing file: index.html"
                     )
 
                     report["missing_files"].append(
-                        dependency_message
+                        "index.html"
                     )
 
                     report["score"] -= 10
+                else:
+                    logger.info(
+                        "Static web entry point detected: "
+                        "index.html"
+                    )
 
-            # ==================================================
-            # Source Files
-            # ==================================================
+            self._validate_dependency_file(
+                project_root,
+                project_type,
+                report,
+            )
 
             source_exists = self._has_source_files(
                 project_root
             )
 
-            if not source_exists:
+            if project_type == "static_web":
+                source_exists = (
+                    project_root / "index.html"
+                ).exists()
 
+            if not source_exists:
                 logger.warning(
                     "No source files found."
                 )
@@ -345,17 +404,11 @@ class ProjectValidator:
                 report["score"] -= 20
 
             else:
-
                 logger.info(
                     "Source files detected successfully."
                 )
 
-            # ==================================================
-            # Additional Project Information
-            # ==================================================
-
             try:
-
                 generated_files = [
                     file
                     for file in project_root.rglob("*")
@@ -368,40 +421,25 @@ class ProjectValidator:
                     f"project files."
                 )
 
-            except OSError as e:
-
+            except OSError as exc:
                 logger.warning(
-                    f"Unable to count project files: {e}"
+                    f"Unable to count project files: {exc}"
                 )
-
-            # ==================================================
-            # Finalize Score
-            # ==================================================
 
             report["score"] = max(
                 report["score"],
-                0
+                0,
             )
 
-            # A project with missing required files
-            # should not be considered valid.
-
-            if report["missing_files"]:
-
-                report["valid"] = False
-
-            else:
-
-                report["valid"] = True
-
-            # ==================================================
-            # Final Logging
-            # ==================================================
+            report["valid"] = not bool(
+                report["missing_files"]
+            )
 
             logger.info(
                 f"Validation completed. "
                 f"Score: {report['score']}"
             )
+
             logger.info(
                 f"Missing files: "
                 f"{len(report['missing_files'])}"
@@ -410,7 +448,7 @@ class ProjectValidator:
             logger.info(
                 f"Warnings: "
                 f"{len(report['warnings'])}"
-)
+            )
 
             logger.info(
                 f"Validation status: "
@@ -420,7 +458,6 @@ class ProjectValidator:
             return report
 
         except Exception as exc:
-
             logger.exception(
                 "Project validation failed."
             )
@@ -432,10 +469,13 @@ class ProjectValidator:
                 "warnings": [
                     str(exc)
                 ],
+                "project_type": report.get(
+                    "project_type",
+                    "unknown",
+                ),
             }
 
         finally:
-
             logger.info("=" * 60)
             logger.info(
                 "Project Validation Finished"
