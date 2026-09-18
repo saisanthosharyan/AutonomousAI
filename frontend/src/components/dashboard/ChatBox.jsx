@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
+import "../../styles/Dashboard.css";
 import {
+  ArrowUp,
+  Check,
   CheckCircle2,
   CircleAlert,
   Download,
@@ -12,23 +15,17 @@ import {
 } from "lucide-react";
 
 import Progress from "./Progress";
+import ProjectViewer from "./ProjectViewer";
 import useWebSocket from "../../hooks/useWebSocket";
-import {
-  createRun,
-  getRun,
-} from "../../api/api";
+import { createRun, getRun } from "../../api/api";
 
-const SESSION_STORAGE_KEY =
-  "autodev_session_id";
-
-const API_BASE_URL =
-  "http://127.0.0.1:8000";
+const SESSION_STORAGE_KEY = "autodev_session_id";
+const API_BASE_URL = "http://127.0.0.1:8000";
 
 function getSessionId() {
-  const existing =
-    localStorage.getItem(
-      SESSION_STORAGE_KEY
-    );
+  const existing = localStorage.getItem(
+    SESSION_STORAGE_KEY,
+  );
 
   if (existing) {
     return existing;
@@ -38,7 +35,7 @@ function getSessionId() {
 
   localStorage.setItem(
     SESSION_STORAGE_KEY,
-    id
+    id,
   );
 
   return id;
@@ -52,84 +49,78 @@ function getPreviewUrl(downloadUrl) {
   try {
     const url = new URL(
       downloadUrl,
-      API_BASE_URL
+      API_BASE_URL,
     );
 
     const downloadPrefix = "/download/";
 
     if (
       !url.pathname.startsWith(
-        downloadPrefix
+        downloadPrefix,
       )
     ) {
       return null;
     }
 
-    const zipName =
-      url.pathname.slice(
-        downloadPrefix.length
-      );
+    const zipName = url.pathname.slice(
+      downloadPrefix.length,
+    );
 
     if (!zipName) {
       return null;
     }
 
-    const projectName =
-      decodeURIComponent(zipName)
-        .replace(/\.zip$/i, "");
+    const projectName = decodeURIComponent(
+      zipName,
+    ).replace(/\.zip$/i, "");
 
     return `${API_BASE_URL}/preview/${encodeURIComponent(
-      projectName
+      projectName,
     )}/index.html`;
   } catch (error) {
     console.error(
       "Failed to create preview URL:",
-      error
+      error,
     );
 
     return null;
   }
 }
 
+function getProjectName(projectPath) {
+  if (!projectPath) {
+    return null;
+  }
+
+  const normalizedPath = String(
+    projectPath,
+  ).replace(/\\/g, "/");
+
+  const parts = normalizedPath.split("/");
+
+  return parts[parts.length - 1] || null;
+}
+
 export default function ChatBox() {
-  const [prompt, setPrompt] =
-    useState("");
-
-  const [loading, setLoading] =
+  const [prompt, setPrompt] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [runId, setRunId] = useState(null);
+  const [result, setResult] = useState(null);
+  const [syncedRunState, setSyncedRunState] =
+    useState(null);
+  const [previewOpen, setPreviewOpen] =
     useState(false);
-
-  const [runId, setRunId] =
+  const [previewUrl, setPreviewUrl] =
     useState(null);
-
-  const [result, setResult] =
-    useState(null);
-
-  const [
-    syncedRunState,
-    setSyncedRunState,
-  ] = useState(null);
-
-  const [
-    previewOpen,
-    setPreviewOpen,
-  ] = useState(false);
-
-  const [
-    previewUrl,
-    setPreviewUrl,
-  ] = useState(null);
 
   const sessionId = useMemo(
     () => getSessionId(),
-    []
+    [],
   );
 
-  const {
-    runState,
-    connected,
-  } = useWebSocket(
+  const { runState } = useWebSocket(
     sessionId,
-    runId
+    runId,
   );
 
   useEffect(() => {
@@ -142,27 +133,18 @@ export default function ChatBox() {
 
     const syncRun = async () => {
       try {
-        const response =
-          await getRun(runId);
-
+        const response = await getRun(runId);
         const run = response?.run;
 
-        if (
-          cancelled ||
-          !run
-        ) {
+        if (cancelled || !run) {
           return;
         }
 
-        if (
-          run.status ===
-          "completed"
-        ) {
+        if (run.status === "completed") {
           setSyncedRunState({
             run_id: run.run_id,
             session_id:
-              run.session_id ||
-              sessionId,
+              run.session_id || sessionId,
             status: "completed",
             step: "Completed",
             progress: 100,
@@ -173,32 +155,24 @@ export default function ChatBox() {
           });
 
           if (run.result) {
-            setResult(
-              run.result
-            );
+            setResult(run.result);
           }
 
           setLoading(false);
 
           if (intervalId) {
-            clearInterval(
-              intervalId
-            );
+            clearInterval(intervalId);
             intervalId = null;
           }
 
           return;
         }
 
-        if (
-          run.status ===
-          "failed"
-        ) {
+        if (run.status === "failed") {
           setSyncedRunState({
             run_id: run.run_id,
             session_id:
-              run.session_id ||
-              sessionId,
+              run.session_id || sessionId,
             status: "failed",
             step:
               run.current_step ||
@@ -221,9 +195,7 @@ export default function ChatBox() {
           setLoading(false);
 
           if (intervalId) {
-            clearInterval(
-              intervalId
-            );
+            clearInterval(intervalId);
             intervalId = null;
           }
 
@@ -233,11 +205,9 @@ export default function ChatBox() {
         setSyncedRunState({
           run_id: run.run_id,
           session_id:
-            run.session_id ||
-            sessionId,
+            run.session_id || sessionId,
           status:
-            run.status ||
-            "running",
+            run.status || "running",
           step:
             run.current_step ||
             run.step ||
@@ -247,167 +217,152 @@ export default function ChatBox() {
             "number"
               ? run.progress
               : 0,
-          message:
-            run.message ||
-            "",
-          error:
-            run.error ||
-            null,
+          message: run.message || "",
+          error: run.error || null,
         });
 
         setLoading(true);
       } catch (error) {
         console.error(
           "Failed to synchronize run:",
-          error
+          error,
         );
       }
     };
 
     syncRun();
 
-    intervalId =
-      window.setInterval(
-        syncRun,
-        2000
-      );
+    intervalId = window.setInterval(
+      syncRun,
+      2000,
+    );
 
     return () => {
       cancelled = true;
 
       if (intervalId) {
-        clearInterval(
-          intervalId
-        );
+        clearInterval(intervalId);
       }
     };
   }, [runId, sessionId]);
 
-  const generateProject =
-    async () => {
-      const message =
-        prompt.trim();
+  const generateProject = async () => {
+    const message = prompt.trim();
 
-      if (!message) {
-        toast.error(
-          "Please enter a project description."
-        );
-        return;
-      }
-
-      setLoading(true);
-      setResult(null);
-      setSyncedRunState(null);
-      setPreviewOpen(false);
-      setPreviewUrl(null);
-
-      try {
-        const data =
-          await createRun(
-            sessionId,
-            message
-          );
-
-        if (
-          !data?.run_id
-        ) {
-          throw new Error(
-            "Backend did not return a run ID."
-          );
-        }
-
-        setRunId(
-          data.run_id
-        );
-
-        toast.success(
-          "Project generation started."
-        );
-      } catch (error) {
-        console.error(
-          "Project generation failed:",
-          error
-        );
-
-        setLoading(false);
-
-        toast.error(
-          error?.response
-            ?.data?.detail ||
-            error.message ||
-            "Failed to start project generation."
-        );
-      }
-    };
-
-  const handleDownload =
-    () => {
-      const downloadUrl =
-        result?.project
-          ?.download_url;
-
-      if (!downloadUrl) {
-        toast.error(
-          "Download is not available."
-        );
-        return;
-      }
-
-      window.open(
-        downloadUrl,
-        "_blank",
-        "noopener,noreferrer"
-      );
-    };
-
-  const handlePreview =
-    () => {
-      const downloadUrl =
-        result?.project
-          ?.download_url;
-
-      const generatedPreviewUrl =
-        getPreviewUrl(
-          downloadUrl
-        );
-
-      if (!generatedPreviewUrl) {
-        toast.error(
-          "Preview is not available for this project."
-        );
-        return;
-      }
-
-      setPreviewUrl(
-        generatedPreviewUrl
+    if (!message) {
+      toast.error(
+        "Please describe what you want to build.",
       );
 
-      setPreviewOpen(true);
-    };
+      return;
+    }
 
-  const closePreview =
-    () => {
-      setPreviewOpen(false);
-      setPreviewUrl(null);
-    };
+    setLoading(true);
+    setResult(null);
+    setSyncedRunState(null);
+    setPreviewOpen(false);
+    setPreviewUrl(null);
 
-  const openPreviewFullscreen =
-    () => {
-      const iframe =
-        document.getElementById(
-          "autodev-preview-frame"
+    try {
+      const data = await createRun(
+        sessionId,
+        message,
+      );
+
+      if (!data?.run_id) {
+        throw new Error(
+          "Backend did not return a run ID.",
         );
-
-      if (
-        iframe?.requestFullscreen
-      ) {
-        iframe.requestFullscreen();
       }
-    };
+
+      setRunId(data.run_id);
+
+      toast.success(
+        "AIO AI started building your project.",
+      );
+    } catch (error) {
+      console.error(
+        "Project generation failed:",
+        error,
+      );
+
+      setLoading(false);
+
+      toast.error(
+        error?.response?.data?.detail ||
+          error.message ||
+          "Failed to start project generation.",
+      );
+    }
+  };
+
+  const handleDownload = () => {
+    const downloadUrl =
+      result?.project?.download_url;
+
+    if (!downloadUrl) {
+      toast.error(
+        "Download is not available.",
+      );
+
+      return;
+    }
+
+    const link =
+      document.createElement("a");
+
+    link.href = downloadUrl;
+    link.download = "";
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handlePreview = () => {
+    const downloadUrl =
+      result?.project?.download_url;
+
+    const generatedPreviewUrl =
+      getPreviewUrl(downloadUrl);
+
+    if (!generatedPreviewUrl) {
+      toast.error(
+        "Preview is not available for this project.",
+      );
+
+      return;
+    }
+
+    setPreviewUrl(
+      generatedPreviewUrl,
+    );
+
+    setPreviewOpen(true);
+  };
+
+  const closePreview = () => {
+    setPreviewOpen(false);
+    setPreviewUrl(null);
+  };
+
+  const openPreviewFullscreen = () => {
+    const iframe =
+      document.getElementById(
+        "autodev-preview-frame",
+      );
+
+    if (iframe?.requestFullscreen) {
+      iframe.requestFullscreen();
+    }
+  };
+
+  const handleSuggestion = (value) => {
+    setPrompt(value);
+  };
 
   const effectiveRunState =
-    syncedRunState ||
-    runState;
+    syncedRunState || runState;
 
   const isFailed =
     effectiveRunState?.status ===
@@ -427,358 +382,489 @@ export default function ChatBox() {
     result?.validation?.score;
 
   const evaluationScore =
-    result?.evaluation
-      ?.overall_score;
+    result?.evaluation?.overall_score;
+
+  const projectType =
+    result?.validation?.project_type ||
+    null;
+
+  const projectName =
+    getProjectName(
+      result?.project?.project_path,
+    );
+
+  const previewAvailable =
+    projectType === "static_web";
 
   return (
     <>
-      <div className="mx-auto max-w-7xl space-y-8 p-6 md:p-8">
+      <div className="aio-workspace">
+        <div className="aio-main">
+          {!loading &&
+            !result &&
+            !isFailed && (
+              <section className="aio-create">
+                <div className="aio-create-heading">
+                  <div className="aio-create-kicker">
+                    <span className="aio-kicker-line" />
+                    <span>
+                      Autonomous development
+                    </span>
+                    <span className="aio-kicker-line" />
+                  </div>
 
-        <section className="rounded-3xl border border-cyan-500/20 bg-gradient-to-br from-cyan-600 via-blue-700 to-indigo-800 p-8 shadow-2xl md:p-10">
+                  <h1>
+                    Build your next
+                    <span> project.</span>
+                  </h1>
 
-          <div className="flex items-start gap-4">
-
-            <div className="rounded-2xl bg-white/10 p-3 backdrop-blur">
-              <Sparkles size={32} />
-            </div>
-
-            <div>
-              <h1 className="text-4xl font-bold md:text-5xl">
-                AutoDev AI
-              </h1>
-
-              <p className="mt-2 text-lg text-cyan-100 md:text-xl">
-                Autonomous AI Software Engineer
-              </p>
-
-              <p className="mt-4 max-w-3xl text-sm leading-6 text-blue-100 md:text-base">
-                Describe what you want to build and
-                AutoDev AI will plan, code, build,
-                execute, debug, validate, test,
-                review and evaluate the project.
-              </p>
-            </div>
-
-          </div>
-
-        </section>
-
-        <div className="flex items-center justify-between rounded-xl border border-gray-800 bg-gray-900 px-5 py-3">
-
-          <div className="flex items-center gap-3">
-
-            <span
-              className={`h-2.5 w-2.5 rounded-full ${
-                connected
-                  ? "bg-green-400"
-                  : "bg-red-400"
-              }`}
-            />
-
-            <span className="text-sm text-gray-300">
-              {connected
-                ? "Live agent connection"
-                : "Agent connection offline"}
-            </span>
-
-          </div>
-
-          {runId && (
-            <span className="max-w-[240px] truncate text-xs text-gray-500">
-              Run: {runId}
-            </span>
-          )}
-
-        </div>
-
-        <section className="rounded-2xl border border-gray-800 bg-gray-900 p-6 shadow-xl md:p-8">
-
-          <div className="mb-6">
-
-            <h2 className="flex items-center gap-3 text-2xl font-bold">
-              <Sparkles className="text-cyan-400" />
-              Build Anything
-            </h2>
-
-            <p className="mt-2 text-gray-400">
-              Tell the AI what you want to build.
-            </p>
-
-          </div>
-
-          <textarea
-            rows={8}
-            value={prompt}
-            disabled={loading}
-            onChange={(event) =>
-              setPrompt(
-                event.target.value
-              )
-            }
-            placeholder={`Example:
-
-Build a MERN ecommerce website with authentication,
-admin panel, product management, Stripe payments,
-Docker deployment and automated tests.`}
-            className="w-full resize-none rounded-xl border border-gray-700 bg-gray-950 p-5 text-base text-white outline-none transition placeholder:text-gray-600 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-          />
-
-          <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-
-            <p className="text-sm text-gray-500">
-              {prompt.length} characters
-            </p>
-
-            <button
-              onClick={
-                generateProject
-              }
-              disabled={loading}
-              className="flex items-center justify-center gap-3 rounded-xl bg-cyan-500 px-8 py-4 font-bold text-white transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {loading ? (
-                <>
-                  <Loader2
-                    size={20}
-                    className="animate-spin"
-                  />
-                  Generating...
-                </>
-              ) : (
-                <>
-                  <Sparkles size={20} />
-                  Generate Project
-                </>
-              )}
-            </button>
-
-          </div>
-
-        </section>
-
-        <Progress
-          runState={
-            effectiveRunState
-          }
-        />
-
-        {isFailed && (
-          <section className="rounded-2xl border border-red-500/30 bg-red-950/30 p-6">
-
-            <div className="flex items-start gap-4">
-
-              <CircleAlert
-                className="mt-1 shrink-0 text-red-400"
-                size={24}
-              />
-
-              <div>
-                <h2 className="font-bold text-red-300">
-                  Project generation failed
-                </h2>
-
-                <p className="mt-2 text-sm text-red-200/80">
-                  {effectiveRunState?.error ||
-                    effectiveRunState?.message ||
-                    "The autonomous pipeline encountered an error."}
-                </p>
-              </div>
-
-            </div>
-
-          </section>
-        )}
-
-        {result && (
-          <section className="rounded-2xl border border-gray-800 bg-gray-900 p-6 shadow-xl md:p-8">
-
-            <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-
-              <div className="flex items-center gap-3">
-
-                <CheckCircle2
-                  className="text-green-400"
-                  size={30}
-                />
-
-                <div>
-                  <h2 className="text-2xl font-bold">
-                    Project Result
-                  </h2>
-
-                  <p className="text-sm text-gray-400">
-                    Autonomous pipeline completed
+                  <p>
+                    Describe what you need.
+                    AIO AI plans the
+                    architecture, writes
+                    the code, runs it, tests
+                    it, and validates the
+                    result.
                   </p>
-
                 </div>
 
-              </div>
+                <div className="aio-composer">
+                  <div className="aio-composer-label">
+                    <Sparkles size={15} />
+                    <span>
+                      Project instructions
+                    </span>
+                  </div>
 
-              {result?.project
-                ?.download_url && (
-                <div className="flex flex-col gap-3 sm:flex-row">
+                  <textarea
+                    value={prompt}
+                    onChange={(event) =>
+                      setPrompt(
+                        event.target.value,
+                      )
+                    }
+                    onKeyDown={(event) => {
+                      if (
+                        event.key ===
+                          "Enter" &&
+                        (event.metaKey ||
+                          event.ctrlKey)
+                      ) {
+                        generateProject();
+                      }
+                    }}
+                    placeholder="Describe the application you want AIO AI to build..."
+                    rows={7}
+                  />
+
+                  <div className="aio-composer-bottom">
+                    <div className="aio-composer-hint">
+                      <span>
+                        {prompt.length}
+                      </span>
+
+                      <span>
+                        characters
+                      </span>
+
+                      <span className="aio-hint-separator">
+                        •
+                      </span>
+
+                      <span>
+                        Ctrl + Enter to
+                        build
+                      </span>
+                    </div>
+
+                    <button
+                      className="aio-build-button"
+                      onClick={
+                        generateProject
+                      }
+                      disabled={
+                        !prompt.trim()
+                      }
+                    >
+                      <span>
+                        Build project
+                      </span>
+
+                      <ArrowUp size={16} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="aio-suggestions">
+                  <span className="aio-suggestions-label">
+                    Start with
+                  </span>
 
                   <button
-                    onClick={
-                      handlePreview
+                    onClick={() =>
+                      handleSuggestion(
+                        "Build a modern responsive landing page for a SaaS product.",
+                      )
                     }
-                    className="flex items-center justify-center gap-2 rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-6 py-3 font-semibold text-cyan-300 transition hover:border-cyan-400 hover:bg-cyan-500/20 hover:text-cyan-200"
                   >
-                    <Eye
-                      size={19}
-                    />
-                    Preview
+                    Website
                   </button>
+
+                  <button
+                    onClick={() =>
+                      handleSuggestion(
+                        "Build a full-stack web application with authentication and a dashboard.",
+                      )
+                    }
+                  >
+                    Web App
+                  </button>
+
+                  <button
+                    onClick={() =>
+                      handleSuggestion(
+                        "Build an AI-powered application with a clean chat interface.",
+                      )
+                    }
+                  >
+                    AI App
+                  </button>
+
+                  <button
+                    onClick={() =>
+                      handleSuggestion(
+                        "Build a professional analytics dashboard with charts and responsive design.",
+                      )
+                    }
+                  >
+                    Dashboard
+                  </button>
+                </div>
+
+                <div className="aio-capabilities">
+                  <div>
+                    <Check size={14} />
+                    <span>
+                      Plan
+                    </span>
+                  </div>
+
+                  <div>
+                    <Check size={14} />
+                    <span>
+                      Code
+                    </span>
+                  </div>
+
+                  <div>
+                    <Check size={14} />
+                    <span>
+                      Execute
+                    </span>
+                  </div>
+
+                  <div>
+                    <Check size={14} />
+                    <span>
+                      Self-heal
+                    </span>
+                  </div>
+
+                  <div>
+                    <Check size={14} />
+                    <span>
+                      Validate
+                    </span>
+                  </div>
+                </div>
+              </section>
+            )}
+
+          {loading && (
+            <section className="aio-building">
+              <div className="aio-building-top">
+                <div className="aio-building-icon">
+                  <Loader2
+                    size={21}
+                    className="animate-spin"
+                  />
+                </div>
+
+                <div>
+                  <span className="aio-section-label">
+                    AUTONOMOUS BUILD
+                  </span>
+
+                  <h1>
+                    Building your project
+                  </h1>
+                </div>
+              </div>
+
+              <p>
+                AIO AI is working through
+                the development pipeline.
+              </p>
+
+              <div className="aio-progress-container">
+                <div className="aio-progress-header">
+                  <span>
+                    {effectiveRunState?.step ||
+                      "Initializing"}
+                  </span>
+
+                  <span>
+                    {effectiveRunState?.progress ??
+                      0}
+                    %
+                  </span>
+                </div>
+
+                <Progress
+                  runState={
+                    effectiveRunState
+                  }
+                />
+              </div>
+
+              <div className="aio-building-status">
+                <span className="aio-live-dot" />
+
+                <span>
+                  {effectiveRunState?.message ||
+                    "AI is working on your project..."}
+                </span>
+              </div>
+
+              {runId && (
+                <div className="aio-build-id">
+                  RUN{" "}
+                  <span>
+                    {runId.slice(0, 8)}
+                  </span>
+                </div>
+              )}
+            </section>
+          )}
+
+          {isFailed && (
+            <section className="aio-failed">
+              <div className="aio-failed-icon">
+                <CircleAlert size={22} />
+              </div>
+
+              <span className="aio-section-label">
+                BUILD FAILED
+              </span>
+
+              <h1>
+                Something went wrong
+              </h1>
+
+              <p>
+                {effectiveRunState?.error ||
+                  effectiveRunState?.message ||
+                  "The autonomous pipeline encountered an error."}
+              </p>
+
+              <button
+                className="aio-retry-button"
+                onClick={() => {
+                  setSyncedRunState(
+                    null,
+                  );
+
+                  setRunId(null);
+                  setLoading(false);
+                }}
+              >
+                Start again
+              </button>
+            </section>
+          )}
+
+          {result && (
+            <section className="aio-result">
+              <div className="aio-result-top">
+                <div className="aio-result-heading">
+                  <div className="aio-result-badge">
+                    <CheckCircle2
+                      size={14}
+                    />
+                    Build complete
+                  </div>
+
+                  <h1>
+                    {projectTitle}
+                  </h1>
+
+                  <p>
+                    Your project has been
+                    generated, tested,
+                    validated, and reviewed
+                    by AIO AI.
+                  </p>
+                </div>
+
+                <div className="aio-result-actions">
+                  {previewAvailable && (
+                    <button
+                      onClick={
+                        handlePreview
+                      }
+                      className="aio-secondary-button"
+                    >
+                      <Eye size={16} />
+                      Preview
+                    </button>
+                  )}
 
                   <button
                     onClick={
                       handleDownload
                     }
-                    className="flex items-center justify-center gap-2 rounded-xl bg-green-500 px-6 py-3 font-semibold text-white transition hover:bg-green-400"
+                    className="aio-primary-button"
                   >
-                    <Download
-                      size={19}
-                    />
-                    Download Project
+                    <Download size={16} />
+                    Download
                   </button>
-
                 </div>
+              </div>
+
+              <div className="aio-result-grid">
+                <div>
+                  <span>
+                    Validation
+                  </span>
+
+                  <strong>
+                    {validationScore ??
+                      "—"}
+
+                    {validationScore !==
+                      undefined &&
+                      "/100"}
+                  </strong>
+                </div>
+
+                <div>
+                  <span>
+                    Tests
+                  </span>
+
+                  <strong
+                    className={
+                      result?.tests
+                        ?.success
+                        ? "aio-positive"
+                        : "aio-negative"
+                    }
+                  >
+                    {result?.tests
+                      ?.success
+                      ? "Passed"
+                      : "Failed"}
+                  </strong>
+                </div>
+
+                <div>
+                  <span>
+                    AI Evaluation
+                  </span>
+
+                  <strong>
+                    {evaluationScore ??
+                      "—"}
+
+                    {evaluationScore !==
+                      undefined &&
+                      "/100"}
+                  </strong>
+                </div>
+              </div>
+
+              {projectName && (
+                <ProjectViewer
+                  projectName={
+                    projectName
+                  }
+                  execution={
+                    result?.execution
+                  }
+                  tests={
+                    result?.tests
+                  }
+                />
               )}
 
-            </div>
+              {result?.review && (
+                <div className="aio-review">
+                  <div className="aio-review-heading">
+                    <div>
+                      <span>
+                        AIO AI Review
+                      </span>
 
-            <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
+                      <small>
+                        Automated analysis
+                      </small>
+                    </div>
+                  </div>
 
-              <div className="rounded-xl border border-gray-800 bg-gray-950 p-5">
-
-                <p className="text-sm font-semibold text-cyan-400">
-                  Project
-                </p>
-
-                <p className="mt-2 font-semibold">
-                  {projectTitle}
-                </p>
-
-              </div>
-
-              <div className="rounded-xl border border-gray-800 bg-gray-950 p-5">
-
-                <p className="text-sm font-semibold text-cyan-400">
-                  Validation
-                </p>
-
-                <p className="mt-2 text-2xl font-bold">
-                  {validationScore ?? "—"}
-                  {validationScore !==
-                    undefined &&
-                    "/100"}
-                </p>
-
-              </div>
-
-              <div className="rounded-xl border border-gray-800 bg-gray-950 p-5">
-
-                <p className="text-sm font-semibold text-cyan-400">
-                  Tests
-                </p>
-
-                <p className="mt-2 font-semibold">
-                  {result?.tests
-                    ?.success
-                    ? "Passed"
-                    : "Failed"}
-                </p>
-
-              </div>
-
-              <div className="rounded-xl border border-gray-800 bg-gray-950 p-5">
-
-                <p className="text-sm font-semibold text-cyan-400">
-                  AI Evaluation
-                </p>
-
-                <p className="mt-2 text-2xl font-bold">
-                  {evaluationScore ?? "—"}
-                  {evaluationScore !==
-                    undefined &&
-                    "/100"}
-                </p>
-
-              </div>
-
-            </div>
-
-            {result?.review && (
-              <div className="mt-6 rounded-xl border border-gray-800 bg-gray-950 p-5">
-
-                <h3 className="font-semibold text-cyan-400">
-                  AI Review
-                </h3>
-
-                <pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap text-sm leading-6 text-gray-300">
-                  {typeof result.review ===
-                  "string"
-                    ? result.review
-                    : JSON.stringify(
-                        result.review,
-                        null,
-                        2
-                      )}
-                </pre>
-
-              </div>
-            )}
-
-          </section>
-        )}
-
-        {isCompleted &&
-          !result && (
-            <div className="rounded-xl border border-yellow-500/20 bg-yellow-950/20 p-5 text-sm text-yellow-300">
-              The run completed, but the final result
-              is still being loaded...
-            </div>
+                  <pre>
+                    {typeof result.review ===
+                    "string"
+                      ? result.review
+                      : JSON.stringify(
+                          result.review,
+                          null,
+                          2,
+                        )}
+                  </pre>
+                </div>
+              )}
+            </section>
           )}
 
+          {isCompleted &&
+            !result && (
+              <div className="aio-loading-result">
+                <Loader2
+                  size={17}
+                  className="animate-spin"
+                />
+
+                Loading the completed
+                project...
+              </div>
+            )}
+        </div>
       </div>
 
       {previewOpen &&
         previewUrl && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <div className="aio-preview-overlay">
+            <div className="aio-preview-modal">
+              <header className="aio-preview-header">
+                <div>
+                  <strong>
+                    Project Preview
+                  </strong>
 
-            <div className="flex h-[95vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-gray-700 bg-gray-950 shadow-2xl">
-
-              <div className="flex items-center justify-between border-b border-gray-800 bg-gray-900 px-5 py-4">
-
-                <div className="flex items-center gap-3">
-
-                  <div className="rounded-lg bg-cyan-500/10 p-2 text-cyan-400">
-                    <Eye size={20} />
-                  </div>
-
-                  <div>
-                    <h2 className="font-semibold text-white">
-                      Live Project Preview
-                    </h2>
-
-                    <p className="text-xs text-gray-500">
-                      Generated by AutoDev AI
-                    </p>
-                  </div>
-
+                  <span>
+                    Generated by AIO AI
+                  </span>
                 </div>
 
-                <div className="flex items-center gap-2">
-
+                <div className="aio-preview-controls">
                   <button
                     onClick={
                       openPreviewFullscreen
                     }
                     title="Fullscreen"
-                    className="rounded-lg p-2 text-gray-400 transition hover:bg-gray-800 hover:text-white"
                   >
                     <Maximize2
-                      size={19}
+                      size={17}
                     />
                   </button>
 
@@ -787,31 +873,21 @@ Docker deployment and automated tests.`}
                       closePreview
                     }
                     title="Close preview"
-                    className="rounded-lg p-2 text-gray-400 transition hover:bg-gray-800 hover:text-white"
                   >
-                    <X
-                      size={21}
-                    />
+                    <X size={19} />
                   </button>
-
                 </div>
+              </header>
 
-              </div>
-
-              <div className="flex-1 bg-white">
-
+              <div className="aio-preview-content">
                 <iframe
                   id="autodev-preview-frame"
-                  title="AutoDev AI Project Preview"
+                  title="AIO AI Project Preview"
                   src={previewUrl}
                   sandbox="allow-scripts"
-                  className="h-full w-full border-0"
                 />
-
               </div>
-
             </div>
-
           </div>
         )}
     </>

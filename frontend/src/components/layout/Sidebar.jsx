@@ -4,59 +4,114 @@ import {
   FolderGit2,
   Settings,
   History,
+  Plus,
+  Sparkles,
 } from "lucide-react";
 
 export default function Sidebar() {
   const menu = [
     {
       name: "Home",
-      icon: <Home size={20} />,
+      icon: Home,
       path: "/",
     },
     {
       name: "Projects",
-      icon: <FolderGit2 size={20} />,
+      icon: FolderGit2,
       path: "/projects",
     },
     {
       name: "History",
-      icon: <History size={20} />,
+      icon: History,
       path: "#",
     },
+  ];
+
+  const tools = [
     {
       name: "Settings",
-      icon: <Settings size={20} />,
+      icon: Settings,
       path: "#",
     },
   ];
 
   return (
-    <aside className="w-72 bg-black border-r border-gray-800 flex flex-col">
-      <div className="text-3xl font-bold p-8">
-        🚀 AutoDev AI
+    <aside className="aio-sidebar">
+      <div className="aio-sidebar-brand">
+        <div className="aio-brand-mark">
+          <Sparkles size={18} strokeWidth={2.2} />
+        </div>
+
+        <div className="aio-brand-text">
+          <span>AIO</span>
+          <span>AI</span>
+        </div>
       </div>
 
-      <nav className="flex flex-col gap-3 px-4">
-        {menu.map((item) => (
-          <NavLink
-            key={item.name}
-            to={item.path}
-            className={({ isActive }) =>
-              `flex items-center gap-3 rounded-lg p-4 transition ${
-                isActive
-                  ? "bg-cyan-600 text-white"
-                  : "hover:bg-gray-800 text-gray-300"
-              }`
-            }
-          >
-            {item.icon}
-            {item.name}
-          </NavLink>
-        ))}
+      <button type="button" className="aio-new-build">
+        <Plus size={18} strokeWidth={2.4} />
+        <span>New Build</span>
+      </button>
+
+      <nav className="aio-sidebar-nav">
+        <div className="aio-nav-section">
+          <span className="aio-nav-label">WORKSPACE</span>
+
+          {menu.map((item) => {
+            const Icon = item.icon;
+
+            return (
+              <NavLink
+                key={item.name}
+                to={item.path}
+                className={({ isActive }) =>
+                  `aio-nav-item ${isActive ? "active" : ""}`
+                }
+              >
+                <Icon size={18} strokeWidth={2} />
+                <span>{item.name}</span>
+              </NavLink>
+            );
+          })}
+        </div>
+
+        <div className="aio-nav-divider" />
+
+        <div className="aio-nav-section">
+          <span className="aio-nav-label">TOOLS</span>
+
+          {tools.map((item) => {
+            const Icon = item.icon;
+
+            return (
+              <NavLink
+                key={item.name}
+                to={item.path}
+                className="aio-nav-item"
+              >
+                <Icon size={18} strokeWidth={2} />
+                <span>{item.name}</span>
+              </NavLink>
+            );
+          })}
+        </div>
       </nav>
 
-      <div className="mt-auto p-6 text-gray-500 text-sm">
-        Version 1.0
+      <div className="aio-sidebar-bottom">
+        <div className="aio-user-card">
+          <div className="aio-user-avatar">S</div>
+
+          <div className="aio-user-info">
+            <span className="aio-user-name">Santhosh</span>
+            <span className="aio-user-plan">Free Plan</span>
+          </div>
+
+          <div className="aio-online-dot" />
+        </div>
+
+        <div className="aio-version">
+          AIO AI <span>v1.0</span>
+        </div>
       </div>
     </aside>
   );

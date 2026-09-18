@@ -293,23 +293,58 @@ class AgentOrchestrator:
     async def _run_validation(
         self,
         project_path: str,
+        task: Optional[Task] = None,
     ) -> dict[str, Any]:
         """
         Run final project validation.
 
-        This is deliberately executed AFTER test repairs.
+        Validation is request-aware:
+        - generation_mode controls optional project files
+        - requested_files are treated as authoritative
         """
 
         try:
+            generation_mode = (
+                getattr(
+                    task,
+                    "generation_mode",
+                    None,
+                )
+                if task is not None
+                else None
+            )
+
+            requested_files = (
+                getattr(
+                    task,
+                    "requested_files",
+                    None,
+                )
+                if task is not None
+                else None
+            )
+
             validation = await asyncio.to_thread(
                 self.validator.validate,
                 project_path,
+                generation_mode,
+                requested_files,
             )
 
             validation = validation or {}
 
             logger.info(
                 "Final project validation completed."
+            )
+
+            logger.info(
+                "Validation generation mode: %s",
+                generation_mode,
+            )
+
+            logger.info(
+                "Validation requested files: %s",
+                requested_files or [],
             )
 
             return validation
@@ -956,7 +991,8 @@ class AgentOrchestrator:
         stage_start = time.monotonic()
 
         validation = await self._run_validation(
-            project["project_path"]
+            project["project_path"],
+            task,
         )
 
         stage_times["validation"] = (

@@ -19,7 +19,6 @@ class PlannerAgent(BaseAgent):
         llm=None,
     ):
         self.llm = llm
-
         self.project_context = ProjectContext()
 
     async def run(
@@ -33,39 +32,30 @@ class PlannerAgent(BaseAgent):
         logger.info("Planner Agent Started")
         logger.info("=" * 60)
 
-        # --------------------------------------------------
-        # Validate input
-        # --------------------------------------------------
-
         if not task or not task.strip():
             raise ValueError(
                 "PlannerAgent received an empty task."
             )
 
-        # --------------------------------------------------
-        # Build conversation history safely (sanitized + truncated)
-        # --------------------------------------------------
-
         recent_history = (history or [])[-MAX_HISTORY_MESSAGES:]
 
         history_lines = [
-            f"{str(m.get('role', 'user')).strip()}: {str(m.get('content', '')).strip()}"
+            f"{str(m.get('role', 'user')).strip()}: "
+            f"{str(m.get('content', '')).strip()}"
             for m in recent_history
             if isinstance(m, dict)
         ]
 
         history_text = "\n".join(history_lines)
-        
+
         project_context = ""
 
         if project_directory:
-
             logger.info(
                 "Analyzing existing project..."
             )
 
             try:
-
                 self.project_context.build(
                     project_directory
                 )
@@ -77,11 +67,9 @@ class PlannerAgent(BaseAgent):
                 )
 
             except Exception:
-
                 logger.exception(
                     "Project analysis failed."
                 )
-
                 self.project_context.clear()
 
         llm = self.llm or LLMRouter.get_llm()
@@ -89,14 +77,180 @@ class PlannerAgent(BaseAgent):
         prompt = f"""
 You are a Principal Software Architect and Technical Lead.
 
-Your job is to understand the USER'S ACTUAL REQUEST and create an implementation plan BEFORE any code is written.
+Your job is to understand the USER'S ACTUAL REQUEST and create
+a minimal implementation plan BEFORE any code is written.
 
-IMPORTANT:
 The user's requirements have the highest priority.
 
-Do NOT assume the project is a web application.
-Do NOT automatically add FastAPI, React, PostgreSQL, Docker, JWT, authentication, APIs, or cloud deployment.
-Only include technologies and features that are actually required by the user's request.
+==================================================
+MOST IMPORTANT FILE GENERATION RULE
+==================================================
+
+Generate ONLY the files that are explicitly requested by the user
+OR technically required to make the requested functionality work.
+
+NEVER create extra files simply because they are common software
+engineering practices.
+
+Do NOT automatically create:
+
+- README.md
+- .gitignore
+- tests/
+- test files
+- requirements.txt
+- pyproject.toml
+- package.json
+- Dockerfile
+- docker-compose.yml
+- CI/CD configuration
+- GitHub Actions
+- LICENSE
+- .env.example
+- configuration files
+- documentation files
+
+unless:
+
+1. The user explicitly requests them, OR
+2. They are technically required for the requested application.
+
+A simple code request MUST remain a simple code request.
+
+For example, if the user says:
+
+"Write a Python program to print all prime numbers from 1 to 100."
+
+The correct result is a single Python source file such as:
+
+main.py
+
+Do NOT generate:
+
+README.md
+.gitignore
+tests/test_main.py
+requirements.txt
+Dockerfile
+CI/CD
+or any other unnecessary file.
+
+==================================================
+GENERATION MODES
+==================================================
+
+Determine the user's actual generation intent.
+
+Use exactly one of these modes:
+
+- "code"
+- "website"
+- "application"
+- "api"
+- "library"
+- "script"
+- "project"
+
+--------------------------------------------------
+CODE
+--------------------------------------------------
+
+Use "code" when the user primarily asks for code,
+a program, function, algorithm, script, solution, or example.
+
+Examples:
+
+"Write a Python program to print prime numbers."
+
+"Give me Java code for binary search."
+
+"Create a JavaScript function to validate an email."
+
+For code mode:
+
+- Generate the minimum number of source files.
+- Usually generate ONE source file.
+- Do not create tests unless requested.
+- Do not create README unless requested.
+- Do not create project configuration unless technically required.
+- Do not create documentation files unless requested.
+
+--------------------------------------------------
+WEBSITE
+--------------------------------------------------
+
+Use "website" when the user asks to build a website,
+web page, landing page, dashboard, frontend, or browser UI.
+
+Only create files actually needed by the requested website.
+
+For example:
+
+index.html
+style.css
+script.js
+
+But do not automatically add:
+
+README.md
+.gitignore
+tests
+Docker
+CI/CD
+
+unless requested or required.
+
+--------------------------------------------------
+APPLICATION
+--------------------------------------------------
+
+Use "application" when the user asks for a complete
+working application with multiple components or features.
+
+Create only the architecture and files required by
+the requested functionality.
+
+--------------------------------------------------
+API
+--------------------------------------------------
+
+Use "api" when the user explicitly requests an API,
+backend service, REST API, GraphQL API, or similar.
+
+Only create backend files required for the API.
+
+--------------------------------------------------
+LIBRARY
+--------------------------------------------------
+
+Use "library" when the user asks to create a reusable
+package, module, SDK, or library.
+
+Only create packaging/configuration files when they
+are actually required or explicitly requested.
+
+--------------------------------------------------
+SCRIPT
+--------------------------------------------------
+
+Use "script" for automation scripts or one-off utilities.
+
+Prefer one file unless additional files are explicitly
+required.
+
+--------------------------------------------------
+PROJECT
+--------------------------------------------------
+
+Use "project" when the user explicitly asks for a complete
+project/repository or asks for project structure, documentation,
+tests, configuration, deployment, or similar project artifacts.
+
+==================================================
+USER REQUEST
+==================================================
+
+{task}
 
 ==================================================
 EXISTING PROJECT CONTEXT
@@ -111,86 +265,132 @@ CONVERSATION HISTORY
 {history_text or "No previous conversation."}
 
 ==================================================
-USER REQUEST
-==================================================
-
-{task}
-
-==================================================
 PLANNING RULES
 ==================================================
 
-1. First identify exactly what the user wants.
+1. First understand exactly what the user requested.
 
-2. Determine the project type from the user's request.
+2. Determine the generation_mode from the user's actual wording.
 
-Possible project types include:
-- CLI Application
-- Web Application
-- REST API
-- Mobile Application
-- Desktop Application
-- Library
-- Automation Script
-- AI/ML Application
-- Data Science Project
-- Game
-- Browser Extension
-- Other
+3. Never upgrade a simple code request into a complete project.
 
-3. Choose the simplest appropriate technology stack.
+4. Never add files merely because they are considered
+   "best practice."
 
-4. DO NOT introduce unnecessary technologies.
+5. If the user explicitly names files, include those files.
+
+6. If the user explicitly asks for tests, create tests.
+
+7. If the user explicitly asks for README/documentation,
+   create documentation.
+
+8. If the user explicitly asks for .gitignore,
+   create .gitignore.
+
+9. If the user explicitly asks for dependency files,
+   create the appropriate dependency file.
+
+10. If the user explicitly asks for a complete project,
+    create the files necessary for that project.
+
+11. If the user asks only for code, provide only code files.
+
+12. Do not add a testing framework merely because the
+    generated code could be tested.
+
+13. Do not add dependencies when the language standard
+    library is sufficient.
+
+14. Do not add a framework when plain language features
+    are sufficient.
+
+15. Prefer the simplest possible implementation.
+
+16. Do not invent requirements.
+
+17. Do not introduce unnecessary technologies.
+
+18. Do not assume Web + FastAPI + React + PostgreSQL.
+
+19. Do not turn a script into an application.
+
+20. Do not turn a code request into a repository.
+
+21. estimated_files MUST represent the actual number of
+    user-facing project files that should be generated.
+
+22. requested_files MUST contain ONLY the files that should
+    actually be generated for the user.
+
+23. The Coder will use requested_files as the authoritative
+    file-generation boundary.
+
+==================================================
+TECHNOLOGY RULES
+==================================================
+
+Only use technologies actually required by the request.
 
 For example:
 
-If the user requests:
+If the user asks:
 
-"Create a Python calculator CLI"
+"Write a Python program to print prime numbers."
 
-Then:
+Return:
 
-project_type = "CLI Application"
+generation_mode = "code"
+project_type = "code"
 language = "Python"
 framework = ""
 database = ""
 authentication = ""
-api_style = ""
-frontend = ""
+deployment = ""
+testing = ""
+dependencies = []
+requested_files = ["main.py"]
 
-Do NOT add:
-- FastAPI
-- React
-- PostgreSQL
-- JWT
-- Docker
-- Redis
-- Kubernetes
-- cloud deployment
+Do NOT add pytest.
 
-unless the user explicitly requests them.
+Do NOT add requirements.txt.
 
-5. Prefer simplicity for small projects.
+Do NOT add README.md.
 
-6. Only add a database when persistent data storage is actually required.
+Do NOT add .gitignore.
 
-7. Only add authentication when users/accounts are actually required.
+==================================================
+EXPLICIT FILE REQUESTS
+==================================================
 
-8. Only add a frontend when a graphical/web interface is actually required.
+If the user says:
 
-9. Only add an API when the user requests an API or the application genuinely requires one.
+"Create index.html, style.css and script.js"
 
-10. Only add Docker when containerization is requested or clearly necessary.
+then:
 
-11. Only add deployment configuration when deployment is requested or clearly necessary.
+requested_files = [
+    "index.html",
+    "style.css",
+    "script.js"
+]
 
-12. Do not invent requirements.
+If the user says:
 
-13. Do not add features merely because they are common in other applications.
+"Create a website with HTML CSS and JavaScript"
 
-14. Do not turn a CLI application into a web application.
+you may infer:
 
-15. Do not turn a simple script into a complex architecture.
+requested_files = [
+    "index.html",
+    "style.css",
+    "script.js"
+]
+
+because these files are directly required for the requested
+website.
+
+However, do not add README, tests, gitignore, Docker,
+CI/CD, or other files unless requested or technically required.
 
 ==================================================
 EXISTING PROJECT RULES
@@ -199,7 +399,7 @@ EXISTING PROJECT RULES
 If an existing project is supplied:
 
 - reuse the existing architecture
-- preserve the existing coding style
+- preserve existing coding style
 - extend existing functionality
 - avoid rewriting working code
 - avoid duplicate files
@@ -213,27 +413,25 @@ If an existing project is supplied:
 
 Only create new files when necessary.
 
+If the user asks for a small change to an existing project,
+do not generate unrelated new project files.
+
 ==================================================
 PROJECT COMPLEXITY
 ==================================================
 
-Estimate complexity based on the actual request.
+Keep complexity proportional to the user's request.
 
-For a small project:
+A one-file code request should normally produce one file.
 
-- keep the number of files small
-- avoid unnecessary abstractions
-- avoid unnecessary frameworks
-- avoid unnecessary services
-- avoid unnecessary infrastructure
+A small website should normally produce only the frontend
+files required by that website.
 
-For example, a simple Python calculator may only need:
+A full application may require multiple files.
 
-app.py
-README.md
-tests/test_app.py
-
-Do not create dozens of files for a simple application.
+A complete project may require project configuration,
+tests, documentation, and supporting files only when the
+user requests them or they are technically necessary.
 
 ==================================================
 REQUIRED JSON
@@ -247,8 +445,8 @@ Use exactly this structure:
     "title": "Project Name",
     "description": "Concise description of the project.",
 
-    "project_type": "CLI Application",
-    "difficulty": "Beginner",
+    "project_type": "code",
+    "generation_mode": "code",
 
     "language": "Python",
     "framework": "",
@@ -260,7 +458,11 @@ Use exactly this structure:
     "deployment": "",
     "testing": "",
 
-    "estimated_files": 3,
+    "estimated_files": 1,
+
+    "requested_files": [
+        "main.py"
+    ],
 
     "features": [],
 
@@ -281,62 +483,94 @@ Use exactly this structure:
 FIELD RULES
 ==================================================
 
+title:
+Short meaningful name.
+
+description:
+Short description of what the user requested.
+
+project_type:
+Actual type of the requested software.
+
+generation_mode:
+One of:
+
+code
+website
+application
+api
+library
+script
+project
+
 language:
-The primary programming language required by the project.
+Primary programming language.
 
 framework:
-Only include a framework if one is actually needed.
+Only if actually required.
 
 backend:
-Only include a backend technology if required.
+Only if actually required.
 
 frontend:
-Only include a frontend technology if required.
+Only if actually required.
 
 database:
-Only include a database if persistent storage is required.
+Only if persistent storage is required.
 
 authentication:
-Only include authentication if required.
-
-api_style:
-Only include REST/GraphQL/etc. if an API is required.
+Only if authentication is required.
 
 deployment:
-Only include deployment technologies if deployment is requested.
+Only if deployment is requested or required.
 
 testing:
-Only include testing technologies appropriate to the project.
+Only if testing is explicitly requested or genuinely
+required by the project.
 
 dependencies:
-Only include dependencies that are actually needed.
+Only dependencies required by the implementation.
+
+features:
+Only features requested by the user.
+
+requested_files:
+ONLY files that should actually be generated.
+
+estimated_files:
+Must equal the number of requested_files whenever
+possible.
 
 folder_structure:
-Only include directories that are actually necessary.
+Only directories/files that are actually necessary.
 
 security:
-Only include security measures relevant to the project.
+Only relevant security considerations.
 
 performance:
-Only include meaningful performance considerations.
+Only meaningful performance considerations.
+
+implementation_order:
+Only actual implementation steps.
+
+steps:
+Only actual implementation steps.
 
 ==================================================
-EXAMPLE
+EXAMPLE 1 — SIMPLE CODE REQUEST
 ==================================================
 
-For the request:
+User:
 
-"Create a simple Python calculator CLI application."
+"Write a Python program to print all prime numbers from 1 to 100."
 
-A good plan would look approximately like:
+Correct plan:
 
 {{
-    "title": "Simple Python Calculator CLI",
-    "description": "A command-line calculator that performs basic arithmetic operations.",
-
-    "project_type": "CLI Application",
-    "difficulty": "Beginner",
-
+    "title": "Prime Number Printer",
+    "description": "A Python program that prints prime numbers from 1 to 100.",
+    "project_type": "code",
+    "generation_mode": "code",
     "language": "Python",
     "framework": "",
     "backend": "",
@@ -345,51 +579,86 @@ A good plan would look approximately like:
     "authentication": "",
     "api_style": "",
     "deployment": "",
-    "testing": "Pytest",
-
-    "estimated_files": 3,
-
+    "testing": "",
+    "estimated_files": 1,
+    "requested_files": [
+        "main.py"
+    ],
     "features": [
-        "Addition",
-        "Subtraction",
-        "Multiplication",
-        "Division",
-        "Division by zero handling",
-        "Command-line input"
+        "Identify prime numbers",
+        "Print prime numbers from 1 to 100"
     ],
-
-    "dependencies": [
-        "pytest"
-    ],
-
+    "dependencies": [],
     "folder_structure": [
-        "app.py",
-        "tests/",
-        "tests/test_app.py",
-        "README.md"
+        "main.py"
     ],
-
     "security": [],
     "performance": [],
-
     "implementation_order": [
-        "Analyze calculator requirements",
-        "Implement arithmetic operations",
-        "Implement command-line interface",
-        "Handle invalid input",
-        "Add tests",
-        "Create README"
+        "Implement prime number detection",
+        "Generate prime numbers from 1 to 100",
+        "Print the results"
     ],
-
     "steps": [
-        "Create the calculator application",
-        "Implement addition",
-        "Implement subtraction",
-        "Implement multiplication",
-        "Implement division with division-by-zero handling",
-        "Implement command-line argument handling",
-        "Add automated tests",
-        "Create project documentation"
+        "Implement prime number detection",
+        "Generate prime numbers from 1 to 100",
+        "Print the results"
+    ]
+}}
+
+==================================================
+EXAMPLE 2 — WEBSITE
+==================================================
+
+User:
+
+"Create a responsive todo website using HTML CSS and JavaScript."
+
+Correct plan:
+
+{{
+    "title": "Responsive Todo Website",
+    "description": "A responsive browser-based todo application.",
+    "project_type": "Web Application",
+    "generation_mode": "website",
+    "language": "JavaScript",
+    "framework": "",
+    "backend": "",
+    "frontend": "HTML, CSS, JavaScript",
+    "database": "",
+    "authentication": "",
+    "api_style": "",
+    "deployment": "",
+    "testing": "",
+    "estimated_files": 3,
+    "requested_files": [
+        "index.html",
+        "style.css",
+        "script.js"
+    ],
+    "features": [
+        "Add tasks",
+        "Complete tasks",
+        "Delete tasks",
+        "Responsive layout"
+    ],
+    "dependencies": [],
+    "folder_structure": [
+        "index.html",
+        "style.css",
+        "script.js"
+    ],
+    "security": [],
+    "performance": [],
+    "implementation_order": [
+        "Create HTML structure",
+        "Create responsive styles",
+        "Implement todo functionality"
+    ],
+    "steps": [
+        "Create HTML structure",
+        "Create responsive styles",
+        "Implement todo functionality"
     ]
 }}
 
@@ -397,7 +666,7 @@ A good plan would look approximately like:
 FINAL RULES
 ==================================================
 
-Return ONLY JSON.
+Return ONLY valid JSON.
 
 No markdown.
 No explanations.
@@ -406,11 +675,17 @@ No code fences.
 
 The plan MUST represent the user's actual request.
 
-Never invent unnecessary technologies.
+requested_files is the authoritative list of user-facing
+files that the Coder should generate.
 
-Never assume Web + FastAPI + React + PostgreSQL.
+Never invent unnecessary files.
 
-Always choose the simplest architecture that correctly solves the user's problem.
+Never generate project boilerplate unless requested.
+
+Never turn a simple code request into a complete project.
+
+Always choose the minimum file set that correctly solves
+the user's request.
 """
 
         logger.info(
@@ -418,14 +693,12 @@ Always choose the simplest architecture that correctly solves the user's problem
         )
 
         try:
-
             plan = await llm.generate_structured(
                 prompt=prompt,
                 schema=Task,
             )
 
         except Exception as exc:
-
             logger.exception(
                 "Planner Agent failed."
             )
@@ -435,53 +708,88 @@ Always choose the simplest architecture that correctly solves the user's problem
             ) from exc
 
         if plan is None:
-            error = "Planner failed to generate a task."
-
-            await self._fail_run(
-                run_id,
-                error,
+            raise RuntimeError(
+                "Planner failed to generate a task."
             )
 
-            raise RuntimeError(error)
-
         if not isinstance(plan, Task):
-
             raise RuntimeError(
                 "PlannerAgent returned an invalid Task object."
             )
 
         if not plan.title.strip():
-
             raise RuntimeError(
                 "PlannerAgent returned an empty title."
             )
 
         if not plan.description.strip():
-
             raise RuntimeError(
                 "PlannerAgent returned an empty description."
             )
 
         if not plan.steps:
-
             raise RuntimeError(
                 "PlannerAgent returned no implementation steps."
             )
 
-        if any(not str(step).strip() for step in plan.steps):
-
+        if any(
+            not str(step).strip()
+            for step in plan.steps
+        ):
             raise RuntimeError(
                 "PlannerAgent returned an empty implementation step."
             )
 
-        step_count = len(plan.steps or [])
+        if not plan.requested_files:
+            raise RuntimeError(
+                "PlannerAgent returned no requested files."
+            )
+
+        estimated_files = len(
+            plan.requested_files
+        )
 
         logger.info(
-            f"Planner generated {step_count} implementation step(s)."
+            "Estimated files: %s",
+            estimated_files,
         )
-        logger.debug("Project title: %s", plan.title)
-        logger.debug("Description: %s", plan.description)
-        logger.debug("Steps: %s", plan.steps)
+
+        step_count = len(plan.steps)
+
+        logger.info(
+            "Planner generated %s implementation step(s).",
+            step_count,
+        )
+
+        logger.info(
+            "Generation mode: %s",
+            plan.generation_mode,
+        )
+
+        logger.info(
+            "Project type: %s",
+            plan.project_type,
+        )
+
+        logger.info(
+            "Requested files: %s",
+            plan.requested_files,
+        )
+
+        logger.debug(
+            "Project title: %s",
+            plan.title,
+        )
+
+        logger.debug(
+            "Description: %s",
+            plan.description,
+        )
+
+        logger.debug(
+            "Steps: %s",
+            plan.steps,
+        )
 
         logger.info("=" * 60)
         logger.info("Planner Agent Finished")

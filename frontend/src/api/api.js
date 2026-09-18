@@ -123,4 +123,14 @@ export const deleteProject = async (
   return response.data;
 };
 
+export const getProjectFiles = async (
+  projectName,
+) => {
+  const response = await api.get(
+    `/project-files/${encodeURIComponent(projectName)}`,
+  );
+
+  return response.data;
+};
+
 export default api;

@@ -17,13 +17,13 @@ from app.api.chat import router as chat_router
 from app.api.download import router as download_router
 from app.api.preview import router as preview_router
 from app.api.projects import router as projects_router
+from app.api.project_files import router as project_files_router
 from app.api.ws import router as ws_router
 from app.api.runs import router as runs_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-
     logger.info("=" * 60)
     logger.info(
         f"Starting {settings.PROJECT_NAME}"
@@ -31,7 +31,6 @@ async def lifespan(app: FastAPI):
     logger.info("=" * 60)
 
     try:
-
         Base.metadata.create_all(
             bind=engine
         )
@@ -43,21 +42,17 @@ async def lifespan(app: FastAPI):
         db = SessionLocal()
 
         try:
-
             recover_stale_runs(db)
 
         finally:
-
             db.close()
 
     except Exception:
-
         logger.exception(
             "Database initialization failed."
         )
 
     try:
-
         LLMRouter.get_llm()
 
         logger.info(
@@ -65,7 +60,6 @@ async def lifespan(app: FastAPI):
         )
 
     except Exception:
-
         logger.exception(
             "LLM initialization failed."
         )
@@ -115,11 +109,17 @@ app.include_router(
 app.include_router(
     download_router
 )
-app.include_router(preview_router)
 
+app.include_router(
+    preview_router
+)
 
 app.include_router(
     projects_router
+)
+
+app.include_router(
+    project_files_router
 )
 
 app.include_router(
@@ -133,7 +133,6 @@ app.include_router(
 
 @app.get("/")
 async def root():
-
     return {
         "message": (
             f"Welcome to "
@@ -145,7 +144,6 @@ async def root():
 
 @app.get("/health")
 async def health():
-
     return {
         "status": "healthy",
         "project": settings.PROJECT_NAME,
@@ -156,7 +154,6 @@ async def health():
 
 @app.get("/llm")
 async def current_llm():
-
     llm = LLMRouter.get_llm()
 
     return {

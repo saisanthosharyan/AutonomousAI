@@ -1,12 +1,35 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Eye, EyeOff, Sparkles } from "lucide-react";
+import {
+  Check,
+  Eye,
+  EyeOff,
+  LockKeyhole,
+  Mail,
+  Moon,
+  Sparkles,
+  Sun,
+  UserRound,
+} from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "../context/useAuth";
+import "../styles/Register.css";
 
 export default function Register() {
   const navigate = useNavigate();
   const { register } = useAuth();
+
+  const [theme, setTheme] = useState(() => {
+    const savedTheme = localStorage.getItem("autodev_login_theme");
+
+    if (savedTheme === "light" || savedTheme === "dark") {
+      return savedTheme;
+    }
+
+    return window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
+  });
 
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -15,6 +38,17 @@ export default function Register() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("autodev_login_theme", theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((currentTheme) =>
+      currentTheme === "dark" ? "light" : "dark"
+    );
+  };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -56,166 +90,224 @@ export default function Register() {
     }
   };
 
+  const isDark = theme === "dark";
+
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center px-6 py-10">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-cyan-500/10 border border-cyan-400/20">
-            <Sparkles className="text-cyan-400" size={32} />
+    <main className="register-page">
+      <section className="register-shell">
+        <div className="register-brand-panel">
+          <div className="register-brand">
+            <div className="register-brand-mark">A</div>
+            <span className="register-brand-name">AutoDev AI</span>
           </div>
 
-          <h1 className="text-3xl font-bold">
-            Create your AutoDev <span className="text-cyan-400">AI</span> account
-          </h1>
+          <div className="register-brand-content">
+            <p className="register-eyebrow">
+              Start building today
+            </p>
 
-          <p className="mt-3 text-gray-400">
-            Start building software with your autonomous AI engineer.
-          </p>
+            <h1>
+              Build ideas.
+              <br />
+              Ship software.
+            </h1>
+
+            <p>
+              Create your AutoDev AI account and turn your ideas into working
+              software with an autonomous development workflow.
+            </p>
+
+            <div className="register-feature-list">
+              <div className="register-feature">
+                <span className="register-feature-icon">
+                  <Sparkles size={15} />
+                </span>
+                AI-powered development workflow
+              </div>
+
+              <div className="register-feature">
+                <span className="register-feature-icon">
+                  <Check size={15} />
+                </span>
+                Automated testing and validation
+              </div>
+
+              <div className="register-feature">
+                <span className="register-feature-icon">
+                  <Check size={15} />
+                </span>
+                Build and iterate from a simple prompt
+              </div>
+            </div>
+          </div>
+
+          <span className="register-brand-footer">
+            Your next project starts here.
+          </span>
         </div>
 
-        <form
-          onSubmit={handleSubmit}
-          className="rounded-2xl border border-gray-800 bg-gray-900/80 p-7 shadow-2xl"
-        >
-          <div className="space-y-5">
-            <div>
-              <label
-                htmlFor="username"
-                className="mb-2 block text-sm font-medium text-gray-300"
-              >
-                Username
-              </label>
+        <div className="register-form-panel">
+          <button
+            type="button"
+            className="register-theme-toggle"
+            onClick={toggleTheme}
+            aria-label={
+              isDark ? "Switch to light theme" : "Switch to dark theme"
+            }
+            title={isDark ? "Light theme" : "Dark theme"}
+          >
+            {isDark ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
 
-              <input
-                id="username"
-                type="text"
-                autoComplete="username"
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                placeholder="Choose a username"
-                className="w-full rounded-xl border border-gray-700 bg-gray-950 px-4 py-3 text-white outline-none transition placeholder:text-gray-600 focus:border-cyan-400"
-              />
+          <div className="register-form-container">
+            <div className="register-form-header">
+              <h2>Create your account</h2>
+              <p>
+                Set up your account and start building with AutoDev AI.
+              </p>
             </div>
 
-            <div>
-              <label
-                htmlFor="register-email"
-                className="mb-2 block text-sm font-medium text-gray-300"
-              >
-                Email
-              </label>
+            <form className="register-form" onSubmit={handleSubmit}>
+              <div className="register-field">
+                <label htmlFor="register-username">Username</label>
 
-              <input
-                id="register-email"
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="you@example.com"
-                className="w-full rounded-xl border border-gray-700 bg-gray-950 px-4 py-3 text-white outline-none transition placeholder:text-gray-600 focus:border-cyan-400"
-              />
-            </div>
+                <div className="register-input-wrapper">
+                  <UserRound className="register-input-icon" />
 
-            <div>
-              <label
-                htmlFor="register-password"
-                className="mb-2 block text-sm font-medium text-gray-300"
-              >
-                Password
-              </label>
-
-              <div className="relative">
-                <input
-                  id="register-password"
-                  type={showPassword ? "text" : "password"}
-                  autoComplete="new-password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder="At least 8 characters"
-                  className="w-full rounded-xl border border-gray-700 bg-gray-950 px-4 py-3 pr-12 text-white outline-none transition placeholder:text-gray-600 focus:border-cyan-400"
-                />
-
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((value) => !value)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-2 text-gray-400 transition hover:bg-gray-800 hover:text-white"
-                  aria-label={
-                    showPassword
-                      ? "Hide password"
-                      : "Show password"
-                  }
-                >
-                  {showPassword ? (
-                    <EyeOff size={19} />
-                  ) : (
-                    <Eye size={19} />
-                  )}
-                </button>
+                  <input
+                    id="register-username"
+                    name="username"
+                    type="text"
+                    value={username}
+                    onChange={(event) => setUsername(event.target.value)}
+                    placeholder="Choose a username"
+                    className="register-input"
+                    autoComplete="username"
+                    disabled={loading}
+                  />
+                </div>
               </div>
-            </div>
 
-            <div>
-              <label
-                htmlFor="confirm-password"
-                className="mb-2 block text-sm font-medium text-gray-300"
-              >
-                Confirm Password
-              </label>
+              <div className="register-field">
+                <label htmlFor="register-email">Email</label>
 
-              <div className="relative">
-                <input
-                  id="confirm-password"
-                  type={showConfirmPassword ? "text" : "password"}
-                  autoComplete="new-password"
-                  value={confirmPassword}
-                  onChange={(event) =>
-                    setConfirmPassword(event.target.value)
-                  }
-                  placeholder="Re-enter your password"
-                  className="w-full rounded-xl border border-gray-700 bg-gray-950 px-4 py-3 pr-12 text-white outline-none transition placeholder:text-gray-600 focus:border-cyan-400"
-                />
+                <div className="register-input-wrapper">
+                  <Mail className="register-input-icon" />
 
-                <button
-                  type="button"
-                  onClick={() =>
-                    setShowConfirmPassword((value) => !value)
-                  }
-                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-2 text-gray-400 transition hover:bg-gray-800 hover:text-white"
-                  aria-label={
-                    showConfirmPassword
-                      ? "Hide password"
-                      : "Show password"
-                  }
-                >
-                  {showConfirmPassword ? (
-                    <EyeOff size={19} />
-                  ) : (
-                    <Eye size={19} />
-                  )}
-                </button>
+                  <input
+                    id="register-email"
+                    name="email"
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="you@example.com"
+                    className="register-input"
+                    autoComplete="email"
+                    disabled={loading}
+                  />
+                </div>
               </div>
-            </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-xl bg-cyan-500 px-4 py-3 font-semibold text-black transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {loading ? "Creating account..." : "Create Account"}
-            </button>
+              <div className="register-field">
+                <label htmlFor="register-password">Password</label>
+
+                <div className="register-input-wrapper">
+                  <LockKeyhole className="register-input-icon" />
+
+                  <input
+                    id="register-password"
+                    name="password"
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    placeholder="At least 8 characters"
+                    className="register-input"
+                    autoComplete="new-password"
+                    disabled={loading}
+                  />
+
+                  <button
+                    type="button"
+                    className="register-password-toggle"
+                    onClick={() => setShowPassword((value) => !value)}
+                    aria-label={
+                      showPassword ? "Hide password" : "Show password"
+                    }
+                    title={showPassword ? "Hide password" : "Show password"}
+                    disabled={loading}
+                  >
+                    {showPassword ? (
+                      <EyeOff size={17} />
+                    ) : (
+                      <Eye size={17} />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="register-field">
+                <label htmlFor="confirm-password">Confirm Password</label>
+
+                <div className="register-input-wrapper">
+                  <LockKeyhole className="register-input-icon" />
+
+                  <input
+                    id="confirm-password"
+                    name="confirmPassword"
+                    type={showConfirmPassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(event) =>
+                      setConfirmPassword(event.target.value)
+                    }
+                    placeholder="Re-enter your password"
+                    className="register-input"
+                    autoComplete="new-password"
+                    disabled={loading}
+                  />
+
+                  <button
+                    type="button"
+                    className="register-password-toggle"
+                    onClick={() =>
+                      setShowConfirmPassword((value) => !value)
+                    }
+                    aria-label={
+                      showConfirmPassword
+                        ? "Hide password"
+                        : "Show password"
+                    }
+                    title={
+                      showConfirmPassword
+                        ? "Hide password"
+                        : "Show password"
+                    }
+                    disabled={loading}
+                  >
+                    {showConfirmPassword ? (
+                      <EyeOff size={17} />
+                    ) : (
+                      <Eye size={17} />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="register-submit"
+                disabled={loading}
+              >
+                {loading ? "Creating account..." : "Create account"}
+              </button>
+            </form>
+
+            <p className="register-login">
+              Already have an account?{" "}
+              <Link to="/login">Sign in</Link>
+            </p>
           </div>
-
-          <p className="mt-6 text-center text-sm text-gray-400">
-            Already have an account?{" "}
-            <Link
-              to="/login"
-              className="font-medium text-cyan-400 hover:text-cyan-300"
-            >
-              Sign in
-            </Link>
-          </p>
-        </form>
-      </div>
-    </div>
+        </div>
+      </section>
+    </main>
   );
 }

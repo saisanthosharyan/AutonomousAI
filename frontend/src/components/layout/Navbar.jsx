@@ -1,17 +1,42 @@
-import { Sparkles } from "lucide-react";
+import { Bell, Search, Sparkles } from "lucide-react";
 
 export default function Navbar() {
   return (
-    <header className="h-16 border-b border-gray-800 bg-gray-950 flex items-center justify-between px-8">
-      <div className="flex items-center gap-3">
-        <Sparkles className="text-cyan-400" size={28} />
-        <h1 className="text-2xl font-bold">
-          AutoDev <span className="text-cyan-400">AI</span>
-        </h1>
+    <header className="aio-navbar">
+      <div className="aio-navbar-left">
+        <div className="aio-navbar-title">
+          <Sparkles size={17} />
+          <span>AI Workspace</span>
+        </div>
       </div>
 
-      <div className="text-gray-400">
-        Autonomous AI Software Engineer
+      <div className="aio-navbar-center">
+        <div className="aio-search">
+          <Search size={16} />
+          <input
+            type="text"
+            placeholder="Search projects..."
+            aria-label="Search projects"
+          />
+          <span className="aio-search-shortcut">⌘ K</span>
+        </div>
+      </div>
+
+      <div className="aio-navbar-right">
+        <div className="aio-status">
+          <span className="aio-status-dot" />
+          <span>AI Online</span>
+        </div>
+
+        <button
+          type="button"
+          className="aio-icon-button"
+          aria-label="Notifications"
+        >
+          <Bell size={17} />
+        </button>
+
+        <div className="aio-navbar-avatar">S</div>
       </div>
     </header>
   );

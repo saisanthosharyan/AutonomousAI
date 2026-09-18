@@ -1,26 +1,19 @@
 import Navbar from "./Navbar";
 import Sidebar from "./Sidebar";
+import "../../styles/Layout.css";
 
 export default function MainLayout({ children }) {
   return (
-    <div className="h-screen w-screen flex bg-slate-950 text-white overflow-hidden">
-
-      {/* Sidebar */}
+    <div className="aio-app-shell">
       <Sidebar />
 
-      {/* Right Side */}
-      <div className="flex flex-col flex-1">
-
-        {/* Navbar */}
+      <div className="aio-content-shell">
         <Navbar />
 
-        {/* Page */}
-        <main className="flex-1 overflow-y-auto bg-slate-900">
+        <main className="aio-page-content">
           {children}
         </main>
-
       </div>
-
     </div>
   );
 }

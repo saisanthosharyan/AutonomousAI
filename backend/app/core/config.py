@@ -1,5 +1,6 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pathlib import Path
 
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     """
@@ -64,7 +65,7 @@ class Settings(BaseSettings):
     # Generated Projects
     # --------------------------------------------------
 
-    GENERATED_PROJECTS_DIR: str = "../generated_projects"
+    GENERATED_PROJECTS_DIR: str = str(Path(__file__).resolve().parents[3] / "generated_projects")
 
     # --------------------------------------------------
     # Logging

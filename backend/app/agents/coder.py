@@ -365,6 +365,39 @@ class CoderAgent(BaseAgent):
             "Requesting corrected project generation..."
         )
 
+        generation_mode = str(
+            getattr(task, "generation_mode", "project")
+            or "project"
+        ).strip().lower()
+
+        project_type = str(
+            getattr(task, "project_type", "")
+            or ""
+        ).strip().lower()
+
+        requested_files = [
+            str(path).replace("\\", "/").strip()
+            for path in (
+                getattr(task, "requested_files", None)
+                or []
+            )
+            if str(path).strip()
+        ]
+
+        requested_files_text = (
+            "\n".join(
+                f"- {path}"
+                for path in requested_files
+            )
+            if requested_files
+            else "- No explicit file list was provided."
+        )
+
+        minimal_generation = generation_mode in {
+            "code",
+            "script",
+        }
+
         correction_prompt = f"""
 You are AutoDev AI.
 
@@ -379,6 +412,25 @@ Title:
 
 Description:
 {task.description}
+
+Project type:
+{project_type}
+
+Generation mode:
+{generation_mode}
+
+====================================================
+EXPLICITLY REQUESTED FILES
+====================================================
+
+{requested_files_text}
+
+These requested files are authoritative.
+
+If the user explicitly requested specific files,
+generate those files.
+
+Do NOT add unrelated files.
 
 ====================================================
 VALIDATION ERROR
@@ -398,12 +450,218 @@ YOUR TASK
 
 Regenerate the COMPLETE project correctly.
 
-Do not only patch the validation error.
+Fix the validation error.
 
-Return the complete project again.
+Return the complete corrected project.
+
+Do not merely patch one file if other files are required
+to make the project work.
+
+However, do NOT create optional files that the user did
+not request and that are not technically required.
 
 ====================================================
-ABSOLUTE OUTPUT RULES
+MINIMUM FILE PRINCIPLE
+====================================================
+
+The user's request is the source of truth.
+
+Generate the SMALLEST FILE SET that fully satisfies the
+user's request.
+
+Only generate a file when at least one of these is true:
+
+1. The user explicitly requested the file.
+2. The file is technically required for the requested
+   functionality.
+3. The file is required because another explicitly
+   requested file depends on it.
+
+Do NOT generate files merely because they are common in
+software projects.
+
+Do NOT automatically create:
+
+- README.md
+- .gitignore
+- tests
+- requirements.txt
+- pyproject.toml
+- package.json
+- Dockerfile
+- docker-compose.yml
+- LICENSE
+- CI/CD files
+- configuration files
+- documentation files
+
+unless they are explicitly requested or technically
+required.
+
+====================================================
+CODE / SCRIPT REQUESTS
+====================================================
+
+If generation mode is:
+
+code
+
+or:
+
+script
+
+then prefer the smallest possible implementation.
+
+For a simple programming request, normally generate only
+one source file.
+
+Example:
+
+User request:
+Write a Python program to print all prime numbers from
+1 to 100.
+
+Correct output:
+
+FILE: main.py
+
+<complete Python program>
+
+Do NOT automatically generate:
+
+- README.md
+- .gitignore
+- tests/test_main.py
+- requirements.txt
+- pyproject.toml
+- Dockerfile
+- documentation
+
+unless the user requested them.
+
+====================================================
+WEBSITE REQUESTS
+====================================================
+
+For a website/frontend request, generate only the files
+actually needed.
+
+For example, a simple HTML/CSS/JavaScript website may use:
+
+FILE: index.html
+
+FILE: style.css
+
+FILE: script.js
+
+But README.md and .gitignore are NOT automatically
+required.
+
+If the user requests only HTML, generate only HTML unless
+additional files are technically required.
+
+If the user requests HTML + CSS, generate the required
+HTML and CSS files.
+
+If JavaScript is required, generate the JavaScript file.
+
+Do not create backend files for a frontend-only request.
+
+====================================================
+APPLICATION / PROJECT REQUESTS
+====================================================
+
+For larger application or project requests, generate the
+files required by the requested architecture and features.
+
+Still avoid unnecessary documentation, tests, deployment
+files, configuration files, or boilerplate unless:
+
+- explicitly requested,
+- technically required,
+- or necessary for the requested architecture.
+
+====================================================
+EXPLICIT FILE REQUESTS
+====================================================
+
+If the task contains explicitly requested files:
+
+{requested_files_text}
+
+those files MUST be generated.
+
+Do not rename them.
+
+Do not replace them with alternative files.
+
+Do not generate unnecessary additional files.
+
+====================================================
+DEPENDENCIES
+====================================================
+
+Only generate dependency configuration when it is actually
+required.
+
+For example:
+
+A Python program using only the standard library does NOT
+need requirements.txt.
+
+A Python program using third-party packages MAY require
+requirements.txt or pyproject.toml.
+
+A Node application requiring npm packages requires an
+appropriate dependency configuration.
+
+Never list standard-library modules as dependencies.
+
+====================================================
+TESTS
+====================================================
+
+Tests are OPTIONAL unless the user requested tests or the
+project technically requires them.
+
+For minimal code/script requests, do NOT create tests
+unless explicitly requested.
+
+If tests are requested or technically required:
+
+- Test real functionality.
+- Import the application functions/classes correctly.
+- Ensure all local imports match actual files.
+- Ensure test expectations match implementation.
+- Never reference undefined symbols.
+- Never create fake tests that only assert True.
+
+====================================================
+PYTHON TEST RULE
+====================================================
+
+If Python tests are required, every test that uses an
+application function or class MUST import it.
+
+Example:
+
+FILE: main.py
+
+def add(a, b):
+    return a + b
+
+FILE: test_main.py
+
+from main import add
+
+def test_add():
+    assert add(2, 3) == 5
+
+Never write a test that references an application symbol
+without importing it.
+
+====================================================
+OUTPUT FORMAT
 ====================================================
 
 Return ONLY project FILE blocks.
@@ -413,26 +671,17 @@ content of that file.
 
 VALID:
 
-FILE: app.py
-import sys
+FILE: main.py
+print("Hello")
 
-def main():
-    print("Hello")
-
-FILE: test_app.py
-from app import main
-
-def test_main():
-    assert callable(main)
-
-FILE: README.md
-# Project
+FILE: helper.py
+def hello():
+    return "Hello"
 
 INVALID:
 
-FILE: app.py
-FILE: test_app.py
-FILE: README.md
+FILE: main.py
+FILE: helper.py
 
 Do NOT output a filename manifest.
 
@@ -454,138 +703,38 @@ Do NOT provide commentary.
 
 Do NOT say "Here is the project".
 
-Every generated file must contain complete real content.
-
-Every import must work.
-
-Every dependency must exist.
-
-Every test must test real functionality.
-
-The project must be runnable.
-
 ====================================================
-MANDATORY PROJECT FILES
+FILE UNIQUENESS
 ====================================================
 
-Unless genuinely inappropriate for the project, include:
+Every generated file path must be unique.
 
-- Source code
-- Automated tests
-- README.md
-- .gitignore
+Never generate the same path twice.
 
-Python projects must use pytest.
-
-Node projects must include package.json.
-
-Generate dependency files whenever third-party dependencies
-are actually required.
-
-Do not add unnecessary dependencies.
+If the previous response contained duplicate files,
+return exactly one correct version of each file.
 
 ====================================================
-CRITICAL PYTHON TEST RULE
+TECHNOLOGY CONSISTENCY
 ====================================================
 
-Every Python test that directly uses functions, classes,
-or variables from application source code MUST explicitly
-import them.
+Follow the requested technology exactly.
 
-Example:
+For a Python request:
 
-FILE: main.py
+Do not generate unrelated HTML, Node, Java, or backend
+framework files.
 
-def add(a, b):
-    return a + b
+For a frontend request:
 
-FILE: test_main.py
+Do not generate Python, Flask, FastAPI, Django, or other
+backend files unless explicitly requested.
 
-from main import add
+For a Node request:
 
-def test_add():
-    assert add(2, 3) == 5
+Use the requested Node technology.
 
-This is INVALID:
-
-FILE: test_main.py
-
-def test_add():
-    assert add(2, 3) == 5
-
-because "add" has not been imported.
-
-Never reference an application function or class that has
-not been imported or otherwise defined in the test.
-
-For a calculator, tests should include:
-
-from main import add, subtract, multiply, divide
-import pytest
-
-def test_add():
-    assert add(2, 3) == 5
-
-def test_subtract():
-    assert subtract(5, 3) == 2
-
-def test_multiply():
-    assert multiply(4, 3) == 12
-
-def test_divide():
-    assert divide(10, 2) == 5
-
-def test_division_by_zero():
-    with pytest.raises(ValueError):
-        divide(10, 0)
-
-====================================================
-TEST VALIDATION
-====================================================
-
-Before returning the project, mentally verify:
-
-1. Every test imports the application code it tests.
-2. Every imported local module exists.
-3. Every imported function/class exists.
-4. Test expectations match implementation behavior.
-5. Tests can be collected by pytest.
-6. Tests execute real functionality.
-7. Tests do not merely assert True.
-8. Tests do not reference undefined application symbols.
-9. Test imports match actual file names.
-10. pytest is available when required.
-
-====================================================
-PYTHON
-====================================================
-
-If using Python:
-
-- Use pytest for automated tests.
-- Test important functionality.
-- Test normal cases.
-- Test important error cases.
-- Ensure the entry point works.
-- Ensure imports work.
-- Do not put standard-library modules in requirements.txt.
-- Do not create unnecessary requirements.txt files.
-- Use relative/local imports only when they match the
-  generated package structure.
-
-====================================================
-DOCUMENTATION
-====================================================
-
-README.md must contain:
-
-- Project name
-- Project description
-- Features
-- Requirements
-- Installation
-- Usage
-- Testing instructions
+Remove files belonging to unrelated technologies.
 
 ====================================================
 SECURITY
@@ -593,15 +742,16 @@ SECURITY
 
 Never generate:
 
-- Real API keys
-- Passwords
-- Access tokens
-- Private keys
-- Secret certificates
-- .env files
-- Credential files
+- real API keys
+- passwords
+- access tokens
+- private keys
+- secret certificates
+- credential files
+- real .env files
 
-Use .env.example for configuration placeholders.
+Use placeholders only when configuration is explicitly
+required.
 
 ====================================================
 VALIDATION-FIRST CORRECTION
@@ -609,114 +759,49 @@ VALIDATION-FIRST CORRECTION
 
 The previous response failed validation.
 
-You MUST correct the specific validation error.
+Correct the specific validation error:
 
-Do not copy the invalid file structure blindly.
+{error}
 
-If the validation error is a duplicate file:
+Before returning the corrected project, internally verify:
 
-- output that file exactly once
-- preserve only one correct version
-- never output the same path twice
-
-If the validation error is a technology mismatch:
-
-- follow the requested technology exactly
-- remove files belonging to the wrong technology
-- generate the correct files for the requested stack
-
-For an HTML/CSS/JavaScript frontend project:
-
-ALLOWED:
-
-FILE: index.html
-FILE: style.css
-FILE: script.js
-FILE: README.md
-FILE: .gitignore
-
-Do NOT generate:
-
-main.py
-app.py
-test_main.py
-test_app.py
-requirements.txt
-pytest configuration
-Flask
-FastAPI
-Django
-Express
-or unrelated backend code.
-
-Before returning the response, internally check:
-
-1. Every file path is unique.
-2. Every file has content.
-3. The requested technology is used.
-4. No forbidden technology files exist.
-5. Required files exist.
-6. README.md exists.
-7. .gitignore exists.
-8. No FILE header is repeated.
+1. Every requested file exists.
+2. Every file path is unique.
+3. Every file contains complete content.
+4. The requested technology is used.
+5. No unrelated technology files exist.
+6. Imports match actual generated files.
+7. Dependencies are actually required.
+8. No unnecessary files were added.
+9. The project satisfies the user's original request.
+10. The validation error has been fixed.
 
 ====================================================
-OUTPUT FORMAT
-====================================================
-
-Return ONLY the actual project files.
-
-A FILE header MUST ALWAYS be followed immediately by
-that file's COMPLETE content.
-
-NEVER output a list of filenames first.
-
-NEVER output a file manifest.
-
-NEVER output empty FILE blocks.
-
-NEVER repeat a FILE header.
-
-NEVER repeat a file path.
-
-Return files in dependency order when possible.
-
-====================================================
-FINAL RULE
+FINAL OUTPUT RULE
 ====================================================
 
 Start immediately with:
 
 FILE:
 
-Do NOT use markdown code fences.
+Return ONLY the actual project files.
 
-Do NOT explain anything.
+No markdown fences.
 
-Do NOT summarize.
+No explanations.
 
-Do NOT provide analysis.
+No summaries.
 
-Do NOT provide commentary.
+No commentary.
 
-Do NOT say "Here is the project".
+No filename manifest.
 
-Do NOT omit required files.
+No empty files.
 
-Do NOT output empty files.
+No duplicate files.
 
-Do NOT repeat files.
+No unnecessary files.
 
-Every imported third-party package must exist in the
-dependency configuration.
-
-Every generated source file must be complete.
-
-Every generated test must execute against real functionality.
-
-The project must be runnable after building.
-
-Return ONLY FILE blocks.
 """
 
         try:
@@ -767,7 +852,6 @@ Return ONLY FILE blocks.
         logger.info("=" * 70)
 
         return corrected_response
-
     # ==========================================================
     # TASK VALIDATION
     # ==========================================================
@@ -844,8 +928,10 @@ Return ONLY FILE blocks.
         task: Task,
     ) -> str:
         """
-        Infer the required technology from task metadata and
-        description so the Coder cannot silently switch stacks.
+        Build a technology contract from the user's actual request.
+
+        The contract prevents technology drift without forcing
+        optional files such as README.md, .gitignore, or tests.
         """
 
         text = (
@@ -855,6 +941,24 @@ Return ONLY FILE blocks.
             f"{getattr(task, 'language', '')}\n"
             f"{getattr(task, 'framework', '')}"
         ).lower()
+
+        requested_files = [
+            str(path).replace("\\", "/").strip()
+            for path in (
+                getattr(task, "requested_files", None)
+                or []
+            )
+            if str(path).strip()
+        ]
+
+        requested_files_text = (
+            "\n".join(
+                f"- {path}"
+                for path in requested_files
+            )
+            if requested_files
+            else "- No explicit file list was provided."
+        )
 
         html_requested = bool(
             re.search(r"\bhtml5?\b", text)
@@ -871,85 +975,154 @@ Return ONLY FILE blocks.
             )
         )
 
-        html_css_js = (
+        frontend_requested = (
             html_requested
-            and css_requested
-            and javascript_requested
+            or css_requested
+            or javascript_requested
+            or str(
+                getattr(task, "project_type", "")
+                or ""
+            ).strip().lower()
+            in {
+                "web",
+                "website",
+                "frontend",
+                "static_web",
+            }
         )
 
-        if html_css_js:
+        if frontend_requested:
 
-            return """
+            frontend_files = []
+
+            if html_requested:
+                frontend_files.append("index.html")
+
+            if css_requested:
+                frontend_files.append("style.css")
+
+            if javascript_requested:
+                frontend_files.append("script.js")
+
+            if requested_files:
+                frontend_files = requested_files
+
+            frontend_files_text = (
+                "\n".join(
+                    f"- {path}"
+                    for path in frontend_files
+                )
+                if frontend_files
+                else "- Generate only the files technically required."
+            )
+
+            return f"""
 FRONTEND TECHNOLOGY CONTRACT
 
-THIS TASK IS A VANILLA FRONTEND PROJECT.
+This task is a frontend/web project.
 
-Use ONLY:
+Use only the frontend technologies actually requested
+by the user.
 
-- HTML
-- CSS
-- JavaScript
+Requested files:
 
-For this task, generate EXACTLY these files:
+{requested_files_text}
 
-FILE: index.html
-FILE: style.css
-FILE: script.js
-FILE: README.md
-FILE: .gitignore
+If the user explicitly requested files, those files are
+authoritative.
 
-DO NOT generate any other files.
+Potential frontend files that may be required:
 
-FORBIDDEN:
+{frontend_files_text}
 
-- Python
-- .py files
-- Flask
-- FastAPI
-- Django
-- Node.js
-- Express
-- server.js
-- server.ts
-- backend code
-- API servers
-- database code
-- requirements.txt
-- pytest
-- test_*.py
-- pyproject.toml
+IMPORTANT:
+
+Generate ONLY the files required to satisfy the user's
+request.
+
+Do NOT automatically generate:
+
+- README.md
+- .gitignore
+- tests
+- test files
 - package.json
-- npm
 - package-lock.json
+- requirements.txt
+- pyproject.toml
+- Docker files
+- CI/CD files
+- backend files
+- configuration files
 
-Do not create a backend.
+unless the user explicitly requested them or they are
+technically required.
 
-Do not create a Python application.
+For a simple static website, use only the required
+HTML/CSS/JavaScript files.
 
-Do not create a test framework.
+Do not create a backend unless explicitly requested.
 
-Implement all requested functionality directly
-inside index.html, style.css and script.js.
+Do not create Python files for a frontend-only request.
 
-README.md must document how to open and use the frontend.
+Do not create Node.js or Express files unless explicitly
+requested.
 
-.gitignore must contain appropriate frontend/editor/OS ignores.
+Do not create a database unless explicitly requested.
 
-Return exactly 5 FILE blocks.
+Do not create a test framework unless tests are explicitly
+requested.
 
-No additional files are allowed.
+Do not create documentation files unless documentation was
+explicitly requested.
+
+The user's original request is the source of truth.
+
+Never generate extra files merely because they are common
+in frontend projects.
+
+Every generated file must contain complete real content.
+
+Return only FILE blocks.
 """
 
-        return """
+        return f"""
 TECHNOLOGY CONTRACT
 
 Follow the requested language and framework exactly.
 
+The user's requested files are:
+
+{requested_files_text}
+
+The user's request is the source of truth.
+
+Generate only the smallest set of files required to satisfy
+the request.
+
+Do NOT automatically add:
+
+- README.md
+- .gitignore
+- tests
+- test files
+- dependency files
+- Docker files
+- CI/CD files
+- configuration files
+- documentation
+
+unless explicitly requested or technically required.
+
 Never substitute another programming language or framework
 unless the project specification explicitly requires it.
 
-Do not introduce a backend, database, framework or dependency
-that the user did not request.
+Do not introduce a backend, database, framework, dependency,
+or unrelated technology that the user did not request.
+
+Every generated file must be complete and functional.
+
+Return only FILE blocks.
 """
 
     # ==========================================================
@@ -964,30 +1137,41 @@ that the user did not request.
         project_context: str,
     ) -> str:
 
-        language = self._get_task_language(
-            task
-        )
+        language = self._get_task_language(task)
+        framework = self._get_task_framework(task)
 
-        framework = self._get_task_framework(
-            task
-        )
+        technology_contract = self._build_technology_contract(task)
 
-        technology_contract = (
-            self._build_technology_contract(
-                task
-            )
+        generation_mode = getattr(
+            task,
+            "generation_mode",
+            None,
+        ) or "minimal"
+
+        requested_files = getattr(
+            task,
+            "requested_files",
+            None,
+        ) or []
+
+        requested_files_text = "\n".join(
+            f"- {item}"
+            for item in requested_files
+            if str(item).strip()
         )
 
         return f"""
 You are AutoDev AI.
 
-You are an elite autonomous software engineer.
+You are an autonomous software engineer.
 
-Your job is to generate a COMPLETE, RUNNABLE, TESTABLE,
-DOCUMENTED software project from the planner specification.
+Your most important responsibility is to generate ONLY what the
+USER ACTUALLY REQUESTED.
+
+Do NOT turn a simple coding request into a complete software project.
 
 ====================================================
-PROJECT
+USER REQUEST
 ====================================================
 
 Title:
@@ -996,20 +1180,24 @@ Title:
 Description:
 {task.description}
 
+====================================================
+PROJECT INFORMATION
+====================================================
+
+Project Type:
+{getattr(task, "project_type", "") or "Not specified"}
+
 Language:
 {language}
 
 Framework:
 {framework or "None"}
 
-Project Type:
-{getattr(task, "project_type", "") or "Not specified"}
+Generation Mode:
+{generation_mode}
 
-====================================================
-TECHNOLOGY CONTRACT
-====================================================
-
-{technology_contract}
+Requested Files:
+{requested_files_text or "None explicitly specified"}
 
 Database:
 {getattr(task, "database", "") or "None"}
@@ -1018,7 +1206,13 @@ Authentication:
 {getattr(task, "authentication", "") or "None"}
 
 Testing:
-{getattr(task, "testing", "") or "Automated tests required"}
+{getattr(task, "testing", "") or "None"}
+
+====================================================
+TECHNOLOGY CONTRACT
+====================================================
+
+{technology_contract}
 
 ====================================================
 EXISTING PROJECT
@@ -1039,235 +1233,307 @@ IMPLEMENTATION PLAN
 {steps or "No implementation steps provided."}
 
 ====================================================
-CORE REQUIREMENTS
+MOST IMPORTANT GENERATION RULE
 ====================================================
 
-Generate the ENTIRE project.
+GENERATE THE MINIMUM NUMBER OF FILES REQUIRED TO SATISFY THE
+USER'S REQUEST.
 
-The generated project must:
+The user's request has higher priority than generic project
+conventions.
 
-1. Be executable.
-2. Be internally consistent.
-3. Contain all required source files.
-4. Contain automated tests where automated testing is practical
-   and appropriate for the requested project.
-5. Contain useful documentation.
-6. Contain dependency/configuration files when appropriate.
-7. Have correct imports.
-8. Have correct file paths.
-9. Have no missing functions.
-10. Have no TODO placeholders.
-11. Have no FIXME placeholders.
-12. Have no pseudocode.
-13. Have no fake implementations.
-14. Have no hardcoded secrets.
-15. Never create a real .env file.
-16. Use .env.example when configuration is required.
-17. Ensure all generated files work together.
-18. Ensure the entry point can actually be executed.
-19. If tests are generated, ensure they can actually run.
-20. Ensure README explains installation, usage and testing
-    when applicable.
+DO NOT add files simply because they are common in software
+projects.
 
-====================================================
-MANDATORY PROJECT COMPLETENESS
-====================================================
+DO NOT automatically create:
 
-Unless the project type genuinely does not require them,
-generate:
-
-- Source code
-- Automated tests
 - README.md
 - .gitignore
-
-Generate dependency files when dependencies exist.
-
-Python projects:
-
-- requirements.txt when third-party packages are required
-- pyproject.toml when appropriate
-- pytest tests
-
-Node projects:
-
+- tests
+- requirements.txt
+- pyproject.toml
 - package.json
-- appropriate test setup
-- README.md
-- .gitignore
+- Docker files
+- CI/CD files
+- configuration files
+- documentation
+- deployment files
 
-Web projects:
+unless they are:
 
-- package.json or equivalent
-- source files
-- tests where appropriate
-- README.md
-- .gitignore
-
-CLI projects:
-
-- executable entry point
-- automated tests
-- README.md
-- .gitignore
+1. explicitly requested by the user,
+2. required for the requested technology to function,
+3. required by an explicitly requested project structure, or
+4. genuinely necessary for the application to run.
 
 ====================================================
-IMPORTANT
+SIMPLE CODE REQUEST RULE
 ====================================================
 
-Do NOT blindly add unnecessary files.
+If the user asks for a piece of code or a simple program,
+generate ONLY the source file(s) necessary to provide that code.
 
-A Python project using only the standard library does NOT
-need requirements.txt.
+Examples:
 
-Do NOT add Docker, Kubernetes, databases, authentication,
-CI/CD or infrastructure unless required.
+User:
+"Write a Python program to print all prime numbers from 1 to 100."
 
-====================================================
-PYTHON
-====================================================
-
-If using Python:
-
-- Use pytest for automated tests.
-- Test important functionality.
-- Test normal cases.
-- Test important error cases.
-- Ensure the entry point works.
-- Ensure imports work.
-- Do not put standard-library modules in requirements.txt.
-
-Standard-library examples:
-
-os
-sys
-json
-re
-math
-pathlib
-typing
-logging
-asyncio
-sqlite3
-datetime
-collections
-subprocess
-unittest
-
-These must NOT be placed in requirements.txt.
-
-====================================================
-CRITICAL TEST IMPORT REQUIREMENT
-====================================================
-
-Every Python test that directly uses functions, classes,
-or variables from generated application code MUST import
-those objects.
-
-Example:
+Generate:
 
 FILE: main.py
 
-def add(a, b):
-    return a + b
+Nothing else.
 
-FILE: test_main.py
+Do NOT generate:
 
-from main import add
+- test_main.py
+- README.md
+- .gitignore
+- requirements.txt
+- pyproject.toml
+- setup.py
+- Dockerfile
 
-def test_add():
-    assert add(2, 3) == 5
+User:
+"Give me a Python program for a calculator."
 
-INVALID:
+Generate the simplest appropriate Python source file.
 
-FILE: test_main.py
+Do NOT automatically generate tests, README, gitignore,
+dependency files, or infrastructure.
 
-def test_add():
-    assert add(2, 3) == 5
+====================================================
+WHEN MULTIPLE FILES ARE ACTUALLY NECESSARY
+====================================================
 
-The invalid example references "add" without importing it.
+Multiple files are allowed when the requested application
+actually requires them.
 
-Before returning the project, verify:
+For example:
 
-- Every local application symbol used by a test is imported.
-- Every imported local module exists.
-- Every imported function/class exists.
-- Test imports match actual generated file names.
-- Tests can be collected by pytest.
-- Tests execute real application functionality.
-- Tests do not reference undefined names.
-- Tests do not merely assert True.
+User:
+"Create a responsive website using HTML, CSS and JavaScript."
+
+Generate the necessary frontend files:
+
+FILE: index.html
+FILE: style.css
+FILE: script.js
+
+Do not add Python, backend, tests, package files, Docker,
+databases, or authentication unless requested or required.
+
+====================================================
+EXPLICIT FILE REQUESTS
+====================================================
+
+If the user explicitly requests files, follow that request.
+
+Example:
+
+"Create a Python project with main.py, tests and README."
+
+Then generate:
+
+FILE: main.py
+FILE: tests/test_main.py
+FILE: README.md
+
+If the user says:
+
+"Create a GitHub-ready project."
+
+Then project-management files such as README.md and
+.gitignore may be appropriate.
+
+====================================================
+DEPENDENCIES
+====================================================
+
+Only create dependency files when they are actually needed.
+
+A Python program using only the Python standard library
+does NOT need:
+
+requirements.txt
+pyproject.toml
+
+For example:
+
+import math
+import sys
+import os
+
+These do not require a requirements.txt file.
+
+If the application uses a third-party package such as:
+
+requests
+numpy
+pandas
+fastapi
+flask
+
+then create the appropriate dependency configuration when
+it is necessary for the requested project.
 
 ====================================================
 TESTING
 ====================================================
 
-Tests are REQUIRED where automated testing is practical.
+Do NOT automatically generate tests for every request.
 
-Tests must test REAL functionality.
+Generate tests when:
 
-Do NOT create fake tests such as:
+- the user explicitly asks for tests,
+- the planner explicitly requires tests,
+- the project is explicitly requested as a testable/full project,
+- or tests are genuinely necessary for the requested architecture.
 
-def test_everything():
-    assert True
+For a simple request such as:
 
-Tests must actually import and execute the generated code.
+"Write a Python program to print prime numbers."
 
-For a calculator, test:
-
-- addition
-- subtraction
-- multiplication
-- division
-- division by zero
-- invalid input where applicable
-
-Example:
-
-FILE: main.py
-
-def add(a, b):
-    return a + b
-
-FILE: test_main.py
-
-from main import add
-
-def test_add():
-    assert add(2, 3) == 5
-
-Make sure test expectations match the implementation.
+DO NOT generate tests unless requested.
 
 ====================================================
 DOCUMENTATION
 ====================================================
 
-README.md should contain:
+Do NOT automatically generate README.md.
 
-- Project name
-- Project description
-- Features
-- Requirements
-- Installation
-- Usage
-- Testing instructions
+README.md should only be generated when:
 
-Keep documentation relevant to the project.
+- the user requests documentation,
+- the user requests a complete project,
+- the user requests a GitHub-ready project,
+- or documentation is genuinely necessary.
 
 ====================================================
-EXISTING PROJECT RULES
+GITIGNORE
 ====================================================
 
-If an existing project is provided:
+Do NOT automatically generate .gitignore.
 
-- Modify existing files whenever possible.
-- Reuse the existing architecture.
-- Preserve existing APIs.
-- Preserve naming conventions.
-- Preserve coding style.
-- Do not regenerate the entire project unnecessarily.
-- Only create new files when required.
-- Do not remove working functionality without reason.
+Only generate .gitignore when:
+
+- the user asks for a complete/GitHub-ready project,
+- the user explicitly requests it,
+- or it is genuinely required by the requested project setup.
+
+====================================================
+FRAMEWORK AND ARCHITECTURE
+====================================================
+
+Never introduce technologies that the user did not request.
+
+Do NOT automatically add:
+
+- FastAPI
+- Flask
+- Django
+- React
+- Node.js
+- Express
+- PostgreSQL
+- MongoDB
+- Redis
+- Docker
+- Kubernetes
+- JWT
+- cloud services
+
+unless required by the user's request.
+
+Choose the simplest architecture that solves the problem.
+
+====================================================
+EXISTING PROJECT
+====================================================
+
+If an existing project is supplied:
+
+- reuse existing files,
+- preserve existing architecture,
+- preserve existing APIs,
+- preserve existing naming,
+- preserve existing functionality,
+- modify existing files when possible,
+- create new files only when necessary.
+
+Do NOT duplicate files.
+
+====================================================
+OUTPUT FORMAT
+====================================================
+
+Return ONLY actual project files.
+
+Every file MUST use this format:
+
+FILE: path/to/file.ext
+<complete file content>
+
+Example:
+
+FILE: main.py
+def main():
+    print("Hello")
+
+if __name__ == "__main__":
+    main()
+
+Do NOT use markdown code fences.
+
+Do NOT provide explanations.
+
+Do NOT provide analysis.
+
+Do NOT provide a filename manifest.
+
+Do NOT list filenames separately before their contents.
+
+Do NOT create empty files.
+
+Do NOT repeat file paths.
+
+Do NOT repeat FILE headers.
+
+====================================================
+FILE COUNT RULE
+====================================================
+
+The number of generated files must be the smallest number
+that correctly satisfies the user's request.
+
+Requested files:
+{requested_files_text or "None"}
+
+Estimated files:
+{getattr(task, "requested_files", None) and len(requested_files) or "Use the minimum necessary"}
+
+If the request can be solved with ONE file, generate ONE file.
+
+If the request requires THREE files, generate THREE files.
+
+Do NOT create additional files merely for completeness.
+
+====================================================
+QUALITY RULES
+====================================================
+
+Every generated source file must:
+
+- contain complete real code,
+- be syntactically valid,
+- be internally consistent,
+- use the requested technology,
+- avoid unnecessary dependencies,
+- avoid TODO placeholders,
+- avoid FIXME placeholders,
+- avoid pseudocode,
+- avoid fake implementations,
+- avoid hardcoded secrets.
 
 ====================================================
 SECURITY
@@ -1275,96 +1541,23 @@ SECURITY
 
 Never generate:
 
-- real API keys
-- passwords
-- access tokens
-- private keys
-- certificates containing secrets
-- .env files
-- credential files
-
-Use placeholders in .env.example.
+- real API keys,
+- passwords,
+- access tokens,
+- private keys,
+- secret certificates,
+- real credentials,
+- .env files containing secrets.
 
 ====================================================
-OUTPUT FORMAT
+FINAL RULE
 ====================================================
 
-Return ONLY the actual project files.
+The USER REQUEST is the source of truth.
 
-IMPORTANT:
+Generate exactly what is needed.
 
-A FILE header MUST ALWAYS be immediately followed by
-that file's COMPLETE content.
-
-NEVER output a list of filenames first.
-
-NEVER output a file manifest.
-
-NEVER output empty FILE blocks.
-
-NEVER repeat a FILE header.
-
-NEVER repeat a file path.
-
-For example, this is INVALID:
-
-FILE: app.py
-FILE: test_app.py
-FILE: README.md
-
-This is VALID:
-
-FILE: main.py
-def add(a, b):
-    return a + b
-
-FILE: test_main.py
-from main import add
-
-def test_add():
-    assert add(2, 3) == 5
-
-FILE: README.md
-# Calculator
-
-Return files in dependency order when possible.
-
-====================================================
-STRICT OUTPUT RULES
-====================================================
-
-Start immediately with:
-
-FILE:
-
-Do NOT use markdown code fences.
-
-Do NOT explain anything.
-
-Do NOT summarize.
-
-Do NOT provide analysis.
-
-Do NOT provide commentary.
-
-Do NOT say "Here is the project".
-
-Do NOT output a filename manifest.
-
-Do NOT omit required files.
-
-Do NOT output empty files.
-
-Do NOT repeat files.
-
-Every imported third-party package must exist in the dependency
-configuration.
-
-Every generated source file must be complete.
-
-Every generated test must execute against real functionality.
-
-The project must be runnable after building.
+Nothing more.
 
 Return ONLY FILE blocks.
 """
@@ -1952,7 +2145,8 @@ Return ONLY FILE blocks.
         )
 
         self._validate_project_completeness(
-            file_blocks
+            file_blocks,
+             task,
         )
 
         self._validate_python_files(
@@ -2115,54 +2309,236 @@ Return ONLY FILE blocks.
     def _validate_project_completeness(
         self,
         file_blocks: List[Tuple[str, str]],
+        task: Optional[Task] = None,
     ) -> None:
+        """
+        Validate project completeness according to the user's
+        actual request.
 
-        filenames = {
-            path.replace("\\", "/").lower().split("/")[-1]
+        Minimal code requests must not be forced to contain
+        README.md, .gitignore, tests, or dependency files.
+
+        Explicitly requested files remain authoritative.
+        """
+
+        generated_paths = {
+            path.replace("\\", "/").strip().lower()
             for path, _ in file_blocks
         }
 
-        # README
-        if not any(
-            name in filenames
-            for name in self.DOCUMENTATION_FILES
-        ):
+        generated_filenames = {
+            path.split("/")[-1]
+            for path in generated_paths
+        }
 
-            raise RuntimeError(
-                "Generated project is missing README documentation."
+        requested_files = set()
+
+        if task is not None:
+            requested_files = {
+                str(path).replace("\\", "/").strip().lower()
+                for path in (
+                    getattr(task, "requested_files", None)
+                    or []
+                )
+                if str(path).strip()
+            }
+
+        generation_mode = (
+            str(
+                getattr(
+                    task,
+                    "generation_mode",
+                    "",
+                )
+                or ""
             )
+            .strip()
+            .lower()
+        )
 
-        # Git hygiene
-        if ".gitignore" not in filenames:
+        # ------------------------------------------------------
+        # Explicit file requests
+        # ------------------------------------------------------
 
-            raise RuntimeError(
-                "Generated project is missing .gitignore."
-            )
+        if requested_files:
 
-        # Tests
-        #
-        # Automated tests are encouraged but not strictly
-        # mandatory for every project type (e.g. a simple
-        # frontend page with only basic client-side validation
-        # may not need a dedicated test framework). Enforcing
-        # this here caused AutoDev-AI to force pytest-style
-        # tests onto non-Python/non-test-oriented projects.
+            missing_requested = []
+
+            for requested in requested_files:
+
+                if requested not in generated_paths:
+
+                    requested_filename = (
+                        requested.split("/")[-1]
+                    )
+
+                    if (
+                        requested_filename
+                        not in generated_filenames
+                    ):
+                        missing_requested.append(
+                            requested
+                        )
+
+            if missing_requested:
+
+                raise RuntimeError(
+                    "Generated project is missing explicitly "
+                    "requested file(s): "
+                    + ", ".join(
+                        sorted(
+                            missing_requested
+                        )
+                    )
+                )
+
+        # ------------------------------------------------------
+        # Test detection
+        # ------------------------------------------------------
+
         test_files = [
             path
             for path, _ in file_blocks
             if self._is_test_file(path)
         ]
 
-        if not test_files:
+        # ------------------------------------------------------
+        # Documentation detection
+        # ------------------------------------------------------
+
+        documentation_files = [
+            path
+            for path, _ in file_blocks
+            if path.lower().split("/")[-1]
+            in self.DOCUMENTATION_FILES
+        ]
+
+        # ------------------------------------------------------
+        # Dependency detection
+        # ------------------------------------------------------
+
+        dependency_files = [
+            path
+            for path, _ in file_blocks
+            if path.lower().split("/")[-1]
+            in {
+                "requirements.txt",
+                "pyproject.toml",
+                "package.json",
+                "pom.xml",
+                "build.gradle",
+                "cargo.toml",
+            }
+        ]
+
+        # ------------------------------------------------------
+        # Determine whether this is a minimal code request.
+        # ------------------------------------------------------
+
+        minimal_code_mode = generation_mode in {
+            "code",
+            "script",
+        }
+
+        # ------------------------------------------------------
+        # Minimal code/script requests
+        #
+        # No README, .gitignore, tests, or dependency files are
+        # required unless explicitly requested.
+        # ------------------------------------------------------
+
+        if minimal_code_mode:
 
             logger.info(
-                "No automated test files detected. "
-                "Tests are optional for this project type."
+                "Minimal code/script generation detected. "
+                "Optional project files are not required."
             )
 
+            logger.info(
+                "Generated files: %d | tests=%d | "
+                "documentation=%d | dependencies=%d",
+                len(file_blocks),
+                len(test_files),
+                len(documentation_files),
+                len(dependency_files),
+            )
+
+            return
+
+        # ------------------------------------------------------
+        # Website/frontend projects
+        #
+        # Do not force README/.gitignore/tests here either.
+        # The technology validator handles the actual required
+        # frontend source files.
+        # ------------------------------------------------------
+
+        project_type = str(
+            getattr(
+                task,
+                "project_type",
+                "",
+            )
+            or ""
+        ).strip().lower()
+
+        if project_type in {
+            "web",
+            "website",
+            "frontend",
+            "static_web",
+        }:
+
+            logger.info(
+                "Frontend/web project detected. "
+                "Optional documentation, gitignore and tests "
+                "are not mandatory."
+            )
+
+            return
+
+        # ------------------------------------------------------
+        # Full project/application mode
+        #
+        # Only require README/.gitignore when the user explicitly
+        # requested a full project or the planner selected a
+        # project-oriented generation mode.
+        # ------------------------------------------------------
+
+        full_project_mode = generation_mode in {
+            "project",
+            "application",
+        }
+
+        if full_project_mode:
+
+            if not documentation_files:
+
+                logger.warning(
+                    "Full project has no README/documentation."
+                )
+
+            if ".gitignore" not in generated_filenames:
+
+                logger.warning(
+                    "Full project has no .gitignore."
+                )
+
+            if not test_files:
+
+                logger.info(
+                    "No automated test files detected. "
+                    "Tests are optional unless explicitly required."
+                )
+
         logger.info(
-            "Project completeness validation passed: "
-            "README + .gitignore present."
+            "Project completeness validation passed. "
+            "Files=%d, tests=%d, documentation=%d, "
+            "dependencies=%d",
+            len(file_blocks),
+            len(test_files),
+            len(documentation_files),
+            len(dependency_files),
         )
 
     # ==========================================================

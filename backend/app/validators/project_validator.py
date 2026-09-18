@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Optional
 
 from app.core.logger import logger
 from app.project.project_analyzer import ProjectAnalyzer
@@ -6,26 +7,13 @@ from app.project.project_analyzer import ProjectAnalyzer
 
 class ProjectValidator:
     """
-    Validates generated projects according to their detected project type.
+    Validates generated projects according to the user's
+    requested generation mode and detected project type.
 
-    Supported behavior:
+    The user's request is the source of truth.
 
-    - static_web:
-        README.md and .gitignore are required.
-        index.html is required.
-        CSS/JS assets are validated through the project analyzer.
-        Dependency files are optional.
-
-    - python:
-        requirements.txt, pyproject.toml, or another supported dependency
-        file is expected.
-
-    - node:
-        package.json is expected.
-
-    - java/cpp:
-        Dependency manifests are optional because these projects may use
-        native/build-tool configurations instead.
+    Minimal code/script requests must not be forced to contain
+    README.md, .gitignore, tests, or dependency manifests.
     """
 
     REQUIRED_FILES = [
@@ -45,6 +33,11 @@ class ProjectValidator:
         "*.ts",
         "*.java",
         "*.cpp",
+        "*.c",
+        "*.go",
+        "*.rs",
+        "*.php",
+        "*.rb",
     ]
 
     def __init__(self):
@@ -93,22 +86,9 @@ class ProjectValidator:
 
     def _detect_project_root(self, project: Path) -> Path:
         """
-        Detect the actual project root.
+        Detect the actual generated project root.
 
-        Handles both:
-
-        project/
-            README.md
-            .gitignore
-            index.html
-
-        and:
-
-        project/
-            my_app/
-                README.md
-                .gitignore
-                index.html
+        Supports both direct and nested project structures.
         """
 
         if (
@@ -132,6 +112,7 @@ class ProjectValidator:
                 and item.name not in {
                     "__pycache__",
                     "venv",
+                    ".venv",
                     "node_modules",
                 }
             ]
@@ -187,7 +168,8 @@ class ProjectValidator:
         report: dict,
     ) -> None:
         """
-        Validate dependency manifests according to project type.
+        Validate dependency configuration only when the
+        detected technology actually requires it.
         """
 
         if project_type == "static_web":
@@ -201,10 +183,11 @@ class ProjectValidator:
             required_files = ["package.json"]
 
         elif project_type == "python":
-            required_files = [
-                "requirements.txt",
-                "pyproject.toml",
-            ]
+            logger.info(
+                "Python project detected. "
+                "Dependency manifest is optional."
+            )
+            return
 
         elif project_type in {"java", "cpp"}:
             logger.info(
@@ -214,7 +197,11 @@ class ProjectValidator:
             return
 
         else:
-            required_files = self.DEPENDENCY_FILES
+            logger.info(
+                f"{project_type} project detected. "
+                "Dependency manifest requirement skipped."
+            )
+            return
 
         dependency_exists = any(
             (project_root / item).exists()
@@ -243,16 +230,154 @@ class ProjectValidator:
 
         report["score"] -= 10
 
+    def _is_minimal_generation(
+        self,
+        generation_mode: Optional[str],
+    ) -> bool:
+        return str(
+            generation_mode or ""
+        ).strip().lower() in {
+            "code",
+            "script",
+        }
+
+    def _validate_optional_project_files(
+        self,
+        project_root: Path,
+        project_type: str,
+        generation_mode: Optional[str],
+        report: dict,
+    ) -> None:
+        """
+        README.md and .gitignore are optional unless the user
+        requested a full project/application structure.
+
+        They are never required for simple code/script requests.
+        """
+
+        if self._is_minimal_generation(
+            generation_mode
+        ):
+            logger.info(
+                "Minimal code/script generation detected. "
+                "README.md and .gitignore are optional."
+            )
+            return
+
+        if project_type in {
+            "static_web",
+            "web",
+            "website",
+            "frontend",
+        }:
+            logger.info(
+                "Frontend project detected. "
+                "README.md and .gitignore are optional."
+            )
+            return
+
+        if str(
+            generation_mode or ""
+        ).strip().lower() in {
+            "project",
+            "application",
+        }:
+            if not (
+                project_root / "README.md"
+            ).exists():
+                logger.info(
+                    "README.md not present. "
+                    "Documentation is optional."
+                )
+
+            if not (
+                project_root / ".gitignore"
+            ).exists():
+                logger.info(
+                    ".gitignore not present. "
+                    "Git configuration is optional."
+                )
+
+        else:
+            logger.info(
+                "Optional project metadata files are not required."
+            )
+
+    def _validate_requested_files(
+        self,
+        project_root: Path,
+        requested_files: Optional[list],
+        report: dict,
+    ) -> None:
+        """
+        Explicitly requested files are authoritative.
+        """
+
+        if not requested_files:
+            return
+
+        generated_paths = {
+            str(
+                file.relative_to(project_root)
+            ).replace("\\", "/").lower()
+            for file in project_root.rglob("*")
+            if file.is_file()
+        }
+
+        generated_filenames = {
+            path.split("/")[-1]
+            for path in generated_paths
+        }
+
+        for requested in requested_files:
+            requested_path = str(
+                requested
+            ).replace("\\", "/").strip().lower()
+
+            if not requested_path:
+                continue
+
+            if requested_path in generated_paths:
+                continue
+
+            requested_filename = (
+                requested_path.split("/")[-1]
+            )
+
+            if requested_filename in generated_filenames:
+                continue
+
+            logger.warning(
+                f"Missing explicitly requested file: "
+                f"{requested}"
+            )
+
+            report["missing_files"].append(
+                requested
+            )
+
+            report["score"] -= 10
+
     def validate(
         self,
         project_path: str,
+        generation_mode: Optional[str] = None,
+        requested_files: Optional[list] = None,
     ) -> dict:
         """
         Validate a generated project.
 
-        Returns:
-            Dictionary containing validation status,
-            score, missing files, warnings, and project type.
+        generation_mode:
+            code
+            script
+            website
+            application
+            api
+            library
+            project
+
+        requested_files:
+            Files explicitly requested by the user.
         """
 
         project = Path(project_path).resolve()
@@ -265,12 +390,23 @@ class ProjectValidator:
             f"Project: {project}"
         )
 
+        logger.info(
+            f"Generation mode: "
+            f"{generation_mode or 'not provided'}"
+        )
+
+        logger.info(
+            f"Requested files: "
+            f"{requested_files or []}"
+        )
+
         report = {
             "valid": True,
             "score": 100,
             "missing_files": [],
             "warnings": [],
             "project_type": "unknown",
+            "generation_mode": generation_mode,
         }
 
         try:
@@ -287,6 +423,7 @@ class ProjectValidator:
                         f"Project folder does not exist: {project}"
                     ],
                     "project_type": "unknown",
+                    "generation_mode": generation_mode,
                 }
 
             if not project.is_dir():
@@ -302,6 +439,7 @@ class ProjectValidator:
                         f"Project path is not a directory: {project}"
                     ],
                     "project_type": "unknown",
+                    "generation_mode": generation_mode,
                 }
 
             project_root = self._detect_project_root(
@@ -321,6 +459,7 @@ class ProjectValidator:
                         "Project directory is empty."
                     ],
                     "project_type": "unknown",
+                    "generation_mode": generation_mode,
                 }
 
             logger.info(
@@ -344,19 +483,18 @@ class ProjectValidator:
                     project_type = "static_web"
                     report["project_type"] = project_type
 
-            for file in self.REQUIRED_FILES:
-                file_path = project_root / file
+            self._validate_requested_files(
+                project_root,
+                requested_files,
+                report,
+            )
 
-                if not file_path.exists():
-                    logger.warning(
-                        f"Missing file: {file}"
-                    )
-
-                    report["missing_files"].append(
-                        file
-                    )
-
-                    report["score"] -= 10
+            self._validate_optional_project_files(
+                project_root,
+                project_type,
+                generation_mode,
+                report,
+            )
 
             if project_type == "static_web":
                 index_file = project_root / "index.html"
@@ -371,6 +509,7 @@ class ProjectValidator:
                     )
 
                     report["score"] -= 10
+
                 else:
                     logger.info(
                         "Static web entry point detected: "
@@ -402,6 +541,13 @@ class ProjectValidator:
                 )
 
                 report["score"] -= 20
+
+                if self._is_minimal_generation(
+                    generation_mode
+                ):
+                    report["missing_files"].append(
+                        "source code"
+                    )
 
             else:
                 logger.info(
@@ -473,6 +619,7 @@ class ProjectValidator:
                     "project_type",
                     "unknown",
                 ),
+                "generation_mode": generation_mode,
             }
 
         finally:
