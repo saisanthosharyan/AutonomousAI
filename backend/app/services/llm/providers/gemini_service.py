@@ -377,6 +377,10 @@ class GeminiService(BaseLLMService):
                 raise RuntimeError(
                     "Gemini returned an empty structured response."
                 )
+            logger.info(
+                "Gemini structured raw response: %s",
+                text,
+            )
 
             parsed = schema.model_validate_json(
                 text
@@ -397,3 +401,4 @@ class GeminiService(BaseLLMService):
                 error,
                 "structured generation",
             )
+

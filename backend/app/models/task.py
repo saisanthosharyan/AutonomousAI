@@ -26,21 +26,8 @@ class Task(BaseModel):
         description="Type of project such as code, CLI, web, API, desktop, mobile, AI, or library",
     )
 
-    generation_mode: str = Field(
-        default="project",
-        description=(
-            "Generation intent: code, website, application, "
-            "api, library, script, or project"
-        ),
-    )
-
-    requested_files: List[str] = Field(
-        default_factory=list,
-        description=(
-            "Files explicitly requested by the user or technically "
-            "required to satisfy the request"
-        ),
-    )
+    generation_mode: str = Field( default="project", description=( "Generation intent: code, website, application, " "api, library, script, or project" ), ) 
+    requested_files: List[str] = Field( ..., description=( "Files explicitly requested by the user or technically " "required to satisfy the request" ), ) 
 
     language: str = Field(
         ...,

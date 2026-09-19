@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import {
   Home,
   FolderGit2,
@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 
 export default function Sidebar() {
+  const navigate = useNavigate();
+
   const menu = [
     {
       name: "Home",
@@ -35,6 +37,10 @@ export default function Sidebar() {
     },
   ];
 
+  const handleNewBuild = () => {
+    navigate("/");
+  };
+
   return (
     <aside className="aio-sidebar">
       <div className="aio-sidebar-brand">
@@ -43,12 +49,15 @@ export default function Sidebar() {
         </div>
 
         <div className="aio-brand-text">
-          <span>AIO</span>
-          <span>AI</span>
+          <span>AutoDev</span><span>AI</span>
         </div>
       </div>
 
-      <button type="button" className="aio-new-build">
+      <button
+        type="button"
+        className="aio-new-build"
+        onClick={handleNewBuild}
+      >
         <Plus size={18} strokeWidth={2.4} />
         <span>New Build</span>
       </button>
@@ -110,7 +119,7 @@ export default function Sidebar() {
         </div>
 
         <div className="aio-version">
-          AIO AI <span>v1.0</span>
+          AutoDev AI <span>v1.0</span>
         </div>
       </div>
     </aside>

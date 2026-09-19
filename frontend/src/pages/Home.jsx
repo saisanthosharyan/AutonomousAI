@@ -1,5 +1,12 @@
+import { useLocation } from "react-router-dom";
 import ChatBox from "../components/dashboard/ChatBox";
 
 export default function Home() {
-  return <ChatBox />;
+  const location = useLocation();
+
+  return (
+    <ChatBox
+      key={`${location.pathname}-${location.key}`}
+    />
+  );
 }
