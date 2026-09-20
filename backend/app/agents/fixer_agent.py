@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import ast
 import json
@@ -2792,17 +2792,132 @@ Return ONLY FILE blocks.
         )
 
         # ------------------------------------------------------
-        # Reject identical response.
+        # Reject identical response with LLM retry.
         # ------------------------------------------------------
 
-        if response.strip() == code.strip():
+        identical_retry = 0
 
-            raise RuntimeError(
-                "Fixer returned an identical, "
-                "unmodified project."
+        while response.strip() == code.strip():
+
+            if identical_retry >= self.MAX_RESPONSE_RETRIES:
+                raise RuntimeError(
+                    "Fixer returned an identical, "
+                    "unmodified project after "
+                    f"{self.MAX_RESPONSE_RETRIES} retry attempts."
+                )
+
+            identical_retry += 1
+
+            logger.warning(
+                "Fixer returned an identical project. "
+                "Requesting a genuinely modified repair response "
+                f"(identical retry {identical_retry}/"
+                f"{self.MAX_RESPONSE_RETRIES})."
             )
 
-        # ------------------------------------------------------
+            correction_prompt = f"""
+REPAIR RETRY REQUIRED
+
+The previous repair response was rejected because it produced the
+same project as the current source.
+
+You MUST make real source-code changes that address the reviewer findings.
+
+Do NOT repeat the previous implementation.
+
+Before generating the response:
+1. Read the reviewer findings carefully.
+2. Identify every actionable problem.
+3. Inspect the current project structure.
+4. Modify the affected source files.
+5. Verify that the requested functionality is actually implemented.
+6. Preserve valid existing functionality.
+7. Preserve the requested file scope.
+8. Do not add unnecessary files.
+9. Return every required source file exactly once.
+10. Return ONLY FILE blocks.
+
+IMPORTANT:
+The response MUST differ from the current project when a reviewer
+finding requires a source-code correction.
+
+REVIEW FINDINGS:
+{review_text}
+
+CURRENT PROJECT:
+{code}
+
+Generate the corrected project now.
+"""
+
+            retry_raw_response = await llm.generate(
+                correction_prompt
+            )
+
+            if retry_raw_response is None:
+                retry_raw_response = ""
+
+            retry_raw_response = str(
+                retry_raw_response
+            ).strip()
+
+            if not retry_raw_response:
+                continue
+
+            retry_response = self._normalize_response(
+                retry_raw_response
+            )
+
+            retry_blocks = self._extract_file_blocks(
+                retry_response
+            )
+
+            if not retry_blocks:
+                logger.warning(
+                    "Identical-response retry returned no valid "
+                    "FILE blocks."
+                )
+                continue
+
+            retry_blocks = self._deduplicate_file_blocks(
+                retry_blocks
+            )
+
+            retry_blocks = self._filter_runtime_artifacts(
+                retry_blocks
+            )
+
+            retry_blocks = self._protect_original_imports(
+                retry_blocks,
+                original_files,
+                project_type,
+            )
+
+            retry_blocks = self._protect_test_files(
+                retry_blocks,
+                original_files,
+            )
+
+            retry_blocks = self._restore_missing_original_files(
+                retry_blocks,
+                original_files,
+            )
+
+            retry_response = self._build_file_blocks(
+                retry_blocks
+            )
+
+            if retry_response.strip() == code.strip():
+                logger.warning(
+                    "Repair retry %s still produced an identical "
+                    "project.",
+                    identical_retry,
+                )
+                response = retry_response
+                continue
+
+            response = retry_response
+            break
         # Validate repaired project.
         # ------------------------------------------------------
 
@@ -3084,3 +3199,4 @@ Return ONLY FILE blocks.
                 response
             )
         )
+

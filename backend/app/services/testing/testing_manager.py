@@ -5,6 +5,7 @@ from app.services.testing.python_test_runner import PythonTestRunner
 from app.services.testing.node_test_runner import NodeTestRunner
 from app.services.testing.java_test_runner import JavaTestRunner
 from app.services.testing.cpp_test_runner import CPPTestRunner
+from app.services.testing.static_web_test_runner import StaticWebTestRunner
 
 
 class TestManager:
@@ -19,6 +20,7 @@ class TestManager:
             "node": NodeTestRunner(),
             "java": JavaTestRunner(),
             "cpp": CPPTestRunner(),
+            "static_web": StaticWebTestRunner(),
         }
 
         self.project_analyzer = ProjectAnalyzer()

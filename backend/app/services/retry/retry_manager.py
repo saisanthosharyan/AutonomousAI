@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import difflib
 import re
 import time
@@ -107,6 +108,8 @@ class RetryManager:
         7. Run tests after execution succeeds.
         8. Repair test failures automatically.
         9. Rebuild and retest repaired projects.
+       10. Repair actionable reviewer findings.
+       11. Rebuild, validate, and re-review repaired projects.
 
     Execution loop:
 
@@ -135,6 +138,20 @@ class RetryManager:
         Rebuild
           ↓
         Tests again
+
+    Review loop:
+
+        Review
+          ↓
+        actionable problems?
+          ↓ yes
+        FixerAgent
+          ↓
+        Rebuild
+          ↓
+        Validate
+          ↓
+        Review again
     """
 
     SIMILARITY_THRESHOLD = 0.999
@@ -239,10 +256,6 @@ class RetryManager:
                     "execution_time": 0,
                 }
 
-            # ----------------------------------------------------------
-            # Normalize execution result
-            # ----------------------------------------------------------
-
             if hasattr(execution_result, "to_dict"):
                 execution_result = (
                     execution_result.to_dict()
@@ -284,10 +297,6 @@ class RetryManager:
                 }
             )
 
-            # ----------------------------------------------------------
-            # EXECUTION SUCCESS
-            # ----------------------------------------------------------
-
             if execution_result.get("success"):
                 logger.info(
                     "Project executed successfully "
@@ -325,10 +334,6 @@ class RetryManager:
                     debug_report,
                     retry_stats,
                 )
-
-            # ----------------------------------------------------------
-            # EXECUTION FAILURE
-            # ----------------------------------------------------------
 
             logger.warning(
                 "Execution failed on attempt %s.",
@@ -368,10 +373,6 @@ class RetryManager:
                 combined_error
             )
 
-            # ----------------------------------------------------------
-            # Repeated error detection
-            # ----------------------------------------------------------
-
             if (
                 combined_error
                 and combined_error in previous_errors
@@ -410,20 +411,12 @@ class RetryManager:
                     combined_error
                 )
 
-            # ----------------------------------------------------------
-            # DEBUG
-            # ----------------------------------------------------------
-
             debug_report = self._analyze_error(
                 execution_result,
                 category,
             )
 
             debug_report["attempt"] = attempt
-
-            # ----------------------------------------------------------
-            # MEMORY
-            # ----------------------------------------------------------
 
             try:
                 self.memory.save(
@@ -442,19 +435,11 @@ class RetryManager:
                     "Failed to save execution failure."
                 )
 
-            # ----------------------------------------------------------
-            # NO MORE RETRIES
-            # ----------------------------------------------------------
-
             if attempt >= self.max_retries:
                 logger.error(
                     "Maximum execution retry attempts reached."
                 )
                 break
-
-            # ----------------------------------------------------------
-            # REPAIR
-            # ----------------------------------------------------------
 
             repair_result = await self._repair_project(
                 current_project=current_project,
@@ -496,10 +481,6 @@ class RetryManager:
                 "Execution repair applied. "
                 "Project will be executed again."
             )
-
-        # ==============================================================
-        # EXECUTION FAILED
-        # ==============================================================
 
         logger.error(
             "Project failed after %s execution attempt(s).",
@@ -563,24 +544,6 @@ class RetryManager:
     ):
         """
         Run project tests and automatically repair test failures.
-
-        This is intentionally separate from execute_with_retry().
-
-        Execution success does NOT mean the project is correct.
-
-        Example:
-
-            program starts successfully
-                    ↓
-                tests fail
-                    ↓
-                DebugManager
-                    ↓
-                FixerAgent
-                    ↓
-                ProjectBuilder
-                    ↓
-                pytest again
         """
 
         if not project:
@@ -632,10 +595,6 @@ class RetryManager:
 
             attempt_start = time.monotonic()
 
-            # ----------------------------------------------------------
-            # RUN TESTS
-            # ----------------------------------------------------------
-
             try:
                 test_result = self.tester.run(
                     current_project["project_path"]
@@ -653,10 +612,6 @@ class RetryManager:
                     "return_code": -1,
                     "execution_time": 0,
                 }
-
-            # ----------------------------------------------------------
-            # Normalize result
-            # ----------------------------------------------------------
 
             if hasattr(test_result, "to_dict"):
                 test_result = (
@@ -699,10 +654,6 @@ class RetryManager:
                 }
             )
 
-            # ----------------------------------------------------------
-            # TEST SUCCESS
-            # ----------------------------------------------------------
-
             if test_result.get("success"):
                 logger.info(
                     "All project tests passed "
@@ -740,10 +691,6 @@ class RetryManager:
                     test_stats,
                 )
 
-            # ----------------------------------------------------------
-            # TEST FAILURE
-            # ----------------------------------------------------------
-
             test_stats["test_failures"] += 1
 
             logger.warning(
@@ -761,7 +708,6 @@ class RetryManager:
                 "",
             )
 
-            # Some test runners put useful failure details in stdout.
             combined_error = "\n".join(
                 part
                 for part in [
@@ -786,10 +732,6 @@ class RetryManager:
             category = categorize_error(
                 combined_error
             )
-
-            # ----------------------------------------------------------
-            # Repeated test failure detection
-            # ----------------------------------------------------------
 
             if (
                 combined_error
@@ -827,10 +769,6 @@ class RetryManager:
                     combined_error
                 )
 
-            # ----------------------------------------------------------
-            # DEBUG TEST FAILURE
-            # ----------------------------------------------------------
-
             debug_report = self._analyze_error(
                 test_result,
                 category,
@@ -839,10 +777,6 @@ class RetryManager:
             debug_report["attempt"] = attempt
             debug_report["failure_type"] = "test_failure"
             debug_report["test_result"] = test_result
-
-            # ----------------------------------------------------------
-            # MEMORY
-            # ----------------------------------------------------------
 
             try:
                 self.memory.save(
@@ -861,19 +795,11 @@ class RetryManager:
                     "Failed to save test failure memory."
                 )
 
-            # ----------------------------------------------------------
-            # NO MORE RETRIES
-            # ----------------------------------------------------------
-
             if attempt >= self.max_retries:
                 logger.error(
                     "Maximum test repair attempts reached."
                 )
                 break
-
-            # ----------------------------------------------------------
-            # AI TEST REPAIR
-            # ----------------------------------------------------------
 
             logger.info(
                 "Tests failed. Requesting AI implementation repair..."
@@ -920,10 +846,6 @@ class RetryManager:
                 "Test repair applied successfully. "
                 "Tests will run again."
             )
-
-        # ==============================================================
-        # TESTS FAILED
-        # ==============================================================
 
         logger.error(
             "Project tests failed after %s attempt(s).",
@@ -974,6 +896,394 @@ class RetryManager:
             debug_report,
             test_stats,
         )
+
+    # ==================================================================
+    # REVIEW + REPAIR LOOP
+    # ==================================================================
+
+    async def review_with_retry(
+        self,
+        project: dict,
+        code: str,
+        review: str,
+        reviewer,
+        validator,
+        task=None,
+        max_review_retries: int = 2,
+    ):
+        """
+        Repair actionable reviewer findings.
+
+        Flow:
+
+            Review
+              ↓
+            actionable problems?
+              ↓ yes
+            FixerAgent
+              ↓
+            Rebuild
+              ↓
+            Validate
+              ↓
+            Review again
+
+        Review suggestions are not automatically treated as defects.
+        The repair loop is triggered only when the Problems Found
+        section contains an actual issue.
+        """
+
+        if not project:
+            raise ValueError(
+                "Project information cannot be empty."
+            )
+
+        if not project.get("project_path"):
+            raise ValueError(
+                "Project path is missing."
+            )
+
+        if not code or not code.strip():
+            raise ValueError(
+                "Generated project code cannot be empty."
+            )
+
+        current_project = project
+        current_code = code
+        current_review = review or ""
+
+        repair_history = []
+
+        review_stats = {
+            "attempts": 0,
+            "repairs": 0,
+            "successful": True,
+        }
+
+        for attempt in range(
+            1,
+            max_review_retries + 1,
+        ):
+            problems = self._extract_review_problems(
+                current_review
+            )
+
+            if not problems:
+                logger.info(
+                    "Review repair loop completed. "
+                    "No actionable reviewer problems found."
+                )
+
+                return {
+                    "project": current_project,
+                    "code": current_code,
+                    "review": current_review,
+                    "repair_history": repair_history,
+                    "review_stats": review_stats,
+                }
+
+            review_stats["attempts"] += 1
+
+            logger.warning(
+                "Reviewer found actionable problems. "
+                "Starting review repair attempt %s/%s.",
+                attempt,
+                max_review_retries,
+            )
+
+            debug_report = {
+                "type": "review",
+                "category": "ReviewFinding",
+                "summary": (
+                    "Reviewer identified actionable problems "
+                    "in the generated project."
+                ),
+                "review": current_review,
+                "problems": problems,
+            }
+
+            repair_result = await self._repair_project(
+                current_project=current_project,
+                current_code=current_code,
+                debug_report=debug_report,
+                repair_history=repair_history,
+                retry_count=attempt,
+                category="ReviewFinding",
+                error=problems[:10000],
+                review=current_review,
+                tests=None,
+                repair_type="review",
+            )
+
+            if not repair_result.get("success"):
+                logger.warning(
+                    "Review repair attempt %s failed: %s",
+                    attempt,
+                    repair_result.get(
+                        "error",
+                        "Unknown repair failure.",
+                    ),
+                )
+
+                review_stats["successful"] = False
+
+                return {
+                    "project": current_project,
+                    "code": current_code,
+                    "review": current_review,
+                    "repair_history": repair_history,
+                    "review_stats": review_stats,
+                    "error": repair_result.get(
+                        "error",
+                        "Review repair failed.",
+                    ),
+                }
+
+            current_project = repair_result[
+                "project"
+            ]
+
+            current_code = repair_result[
+                "code"
+            ]
+
+            repair_history.append(
+                repair_result["history"]
+            )
+
+            review_stats["repairs"] += 1
+
+            logger.info(
+                "Review repair applied successfully."
+            )
+
+            # ----------------------------------------------------------
+            # Validate repaired project
+            # ----------------------------------------------------------
+
+            try:
+                generation_mode = (
+                    getattr(
+                        task,
+                        "generation_mode",
+                        None,
+                    )
+                    if task is not None
+                    else None
+                )
+
+                requested_files = (
+                    getattr(
+                        task,
+                        "requested_files",
+                        None,
+                    )
+                    if task is not None
+                    else None
+                )
+
+                validation = await asyncio.to_thread(
+                    validator.validate,
+                    current_project["project_path"],
+                    generation_mode,
+                    requested_files,
+                )
+
+            except Exception as exc:
+                logger.exception(
+                    "Validation failed after review repair."
+                )
+
+                review_stats["successful"] = False
+
+                return {
+                    "project": current_project,
+                    "code": current_code,
+                    "review": current_review,
+                    "repair_history": repair_history,
+                    "review_stats": review_stats,
+                    "error": (
+                        "Validation failed after review repair: "
+                        f"{exc}"
+                    ),
+                }
+
+            if not validation or not validation.get(
+                "valid",
+                False,
+            ):
+                logger.warning(
+                    "Review repair produced an invalid project."
+                )
+
+                review_stats["successful"] = False
+
+                return {
+                    "project": current_project,
+                    "code": current_code,
+                    "review": current_review,
+                    "repair_history": repair_history,
+                    "review_stats": review_stats,
+                    "validation": validation or {},
+                    "error": (
+                        "Review repair produced an "
+                        "invalid project."
+                    ),
+                }
+
+            logger.info(
+                "Validation passed after review repair."
+            )
+
+            # ----------------------------------------------------------
+            # Review repaired project
+            # ----------------------------------------------------------
+
+            try:
+                current_review = await reviewer(
+                    current_code,
+                    current_project["project_path"],
+                    task,
+                )
+
+            except Exception as exc:
+                logger.exception(
+                    "Reviewer failed after review repair."
+                )
+
+                review_stats["successful"] = False
+
+                return {
+                    "project": current_project,
+                    "code": current_code,
+                    "review": current_review,
+                    "repair_history": repair_history,
+                    "review_stats": review_stats,
+                    "error": (
+                        "Reviewer failed after review repair: "
+                        f"{exc}"
+                    ),
+                }
+
+            current_review = (
+                current_review
+                if isinstance(
+                    current_review,
+                    str,
+                )
+                else str(current_review)
+            )
+
+            current_review = current_review.strip()
+
+            logger.info(
+                "Re-review completed after repair attempt %s.",
+                attempt,
+            )
+
+        # --------------------------------------------------------------
+        # Maximum review repairs reached
+        # --------------------------------------------------------------
+
+        remaining_problems = (
+            self._extract_review_problems(
+                current_review
+            )
+        )
+
+        if remaining_problems:
+            review_stats["successful"] = False
+
+            logger.warning(
+                "Maximum review repair attempts reached "
+                "with actionable problems remaining."
+            )
+
+        else:
+            logger.info(
+                "Review repair loop completed successfully."
+            )
+
+        return {
+            "project": current_project,
+            "code": current_code,
+            "review": current_review,
+            "repair_history": repair_history,
+            "review_stats": review_stats,
+        }
+
+    # ==================================================================
+    # REVIEW PARSING
+    # ==================================================================
+
+    @staticmethod
+    def _extract_review_problems(
+        review: str,
+    ) -> str:
+        """
+        Extract the Problems Found section from a reviewer report.
+
+        Optional suggestions are deliberately excluded.
+        """
+
+        if not review:
+            return ""
+
+        marker = "## Problems Found"
+
+        if marker not in review:
+            return ""
+
+        problems = review.split(
+            marker,
+            1,
+        )[1]
+
+        next_sections = [
+            "## Possible Runtime Errors",
+            "## Security Review",
+            "## Performance Review",
+            "## Code Quality",
+            "## Missing Required Files",
+            "## Final Suggestions",
+            "## Final Score",
+        ]
+
+        positions = [
+            problems.find(section)
+            for section in next_sections
+            if problems.find(section) >= 0
+        ]
+
+        if positions:
+            problems = problems[
+                :min(positions)
+            ]
+
+        problems = problems.strip()
+
+        if not problems:
+            return ""
+
+        normalized = problems.lower()
+
+        no_problem_phrases = [
+            "no significant defects",
+            "no significant issues",
+            "no actual issues",
+            "no problems found",
+            "no defects found",
+            "there are no significant defects",
+            "there are no significant issues",
+        ]
+
+        if any(
+            phrase in normalized
+            for phrase in no_problem_phrases
+        ):
+            return ""
+
+        return problems
 
     # ==================================================================
     # SHARED ERROR ANALYSIS
@@ -1090,28 +1400,17 @@ class RetryManager:
             fixed_code = await self.fixer.run(
                 code=current_code,
                 review=review,
-
-                # ------------------------------------------------------
-                # Test failures are explicitly supplied here.
-                # ------------------------------------------------------
                 tests=tests,
-
                 execution_error=debug_report,
-
                 retry_history=repair_history,
-
                 retry_count=retry_count,
-
                 memory=self.memory,
-
                 project_directory=(
                     current_project[
                         "project_path"
                     ]
                 ),
-
                 project_type=project_type,
-
                 save_debug=True,
             )
 
@@ -1125,10 +1424,6 @@ class RetryManager:
                 "success": False,
                 "error": str(exc),
             }
-
-        # --------------------------------------------------------------
-        # Empty repair
-        # --------------------------------------------------------------
 
         if not fixed_code:
             logger.error(
@@ -1144,10 +1439,6 @@ class RetryManager:
 
         fixed_code = fixed_code.strip()
 
-        # --------------------------------------------------------------
-        # Identical repair
-        # --------------------------------------------------------------
-
         if fixed_code == old_code.strip():
             logger.error(
                 "Fixer returned code identical to "
@@ -1160,10 +1451,6 @@ class RetryManager:
                     "Fixer returned identical code."
                 ),
             }
-
-        # --------------------------------------------------------------
-        # Similarity
-        # --------------------------------------------------------------
 
         similarity = difflib.SequenceMatcher(
             None,
@@ -1197,10 +1484,6 @@ class RetryManager:
                 "the previous source."
             )
 
-        # --------------------------------------------------------------
-        # Repair history
-        # --------------------------------------------------------------
-
         history_entry = {
             "attempt": retry_count,
             "category": category,
@@ -1211,10 +1494,6 @@ class RetryManager:
                 4,
             ),
         }
-
-        # --------------------------------------------------------------
-        # Repair memory
-        # --------------------------------------------------------------
 
         try:
             self.memory.save(
@@ -1237,10 +1516,6 @@ class RetryManager:
             logger.exception(
                 "Failed to save repair memory."
             )
-
-        # --------------------------------------------------------------
-        # Rebuild
-        # --------------------------------------------------------------
 
         try:
             updated_project = (
@@ -1266,10 +1541,6 @@ class RetryManager:
                 "success": False,
                 "error": str(exc),
             }
-
-        # --------------------------------------------------------------
-        # Save repair report
-        # --------------------------------------------------------------
 
         try:
             reporter = RepairReporter(
@@ -1300,10 +1571,6 @@ class RetryManager:
             logger.exception(
                 "Failed to save repair report."
             )
-
-        # --------------------------------------------------------------
-        # Repair applied memory
-        # --------------------------------------------------------------
 
         try:
             self.memory.save(

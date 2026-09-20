@@ -884,7 +884,7 @@ export default function ChatBox() {
                   id="autodev-preview-frame"
                   title="AutoDev AI Project Preview"
                   src={previewUrl}
-                  sandbox="allow-scripts"
+                  sandbox="allow-scripts allow-same-origin"
                 />
               </div>
             </div>
