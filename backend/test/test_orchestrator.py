@@ -51,6 +51,8 @@ def create_task(
         title=title,
         description=description,
         project_type="web",
+        generation_mode="project",
+        requested_files=["main.py"],
         language="python",
     )
 
@@ -129,6 +131,40 @@ def configure_success(orchestrator, tmp_path):
         )
     )
 
+    orchestrator.retry_manager.review_with_retry = AsyncMock(
+        return_value={
+            "project": {
+                "project_path": project_path,
+                "zip_path": zip_path,
+            },
+            "code": "print('hello')",
+            "review": """
+## Overall Summary
+
+The generated project is functional and well structured.
+
+## Strengths
+
+- Clear implementation
+- Working source code
+- Basic test coverage
+
+## Problems Found
+
+No significant problems were found.
+
+## Final Score
+
+9/10
+""",
+            "repair_history": [],
+            "review_stats": {
+                "attempts": 0,
+                "repairs": 0,
+                "successful": True,
+            },
+        }
+    )
     orchestrator.validator.validate.return_value = {
         "valid": True,
         "errors": [],

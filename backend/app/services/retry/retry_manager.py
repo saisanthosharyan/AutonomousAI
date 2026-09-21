@@ -1270,6 +1270,7 @@ class RetryManager:
         no_problem_phrases = [
             "no significant defects",
             "no significant issues",
+            "no significant problems",
             "no actual issues",
             "no problems found",
             "no defects found",

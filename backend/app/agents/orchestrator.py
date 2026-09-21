@@ -210,6 +210,11 @@ class AgentOrchestrator:
     def _failed_review(
         error: str,
     ) -> str:
+        error = str(error).strip()
+
+        if error.startswith("Reviewer Agent failed:"):
+            return error
+
         return f"Reviewer Agent failed: {error}"
 
     @staticmethod

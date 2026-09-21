@@ -26,8 +26,13 @@ class FakeLLM:
                 "for integration testing."
             ),
             project_type="CLI",
-            language="Python",
-            framework=None,
+              generation_mode="application",
+              requested_files=[
+                  "main.py",
+                  "test_main.py",
+              ],
+              language="Python",
+              framework=None,
             database=None,
             authentication=None,
             deployment=None,
@@ -282,5 +287,3 @@ def test_chat_full_pipeline(tmp_path):
     # ------------------------------------------------------------------
 
     assert data["success"] is True
-
-

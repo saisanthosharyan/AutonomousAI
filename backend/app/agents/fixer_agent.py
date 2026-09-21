@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import ast
 import json
@@ -2883,17 +2883,16 @@ Generate the corrected project now.
                 retry_blocks
             )
 
-            retry_blocks = self._filter_runtime_artifacts(
+            retry_blocks = self._filter_generated_file_blocks(
                 retry_blocks
             )
 
-            retry_blocks = self._protect_original_imports(
+            retry_blocks = self._protect_python_imports(
                 retry_blocks,
                 original_files,
-                project_type,
             )
 
-            retry_blocks = self._protect_test_files(
+            retry_blocks = self._restore_original_test_files(
                 retry_blocks,
                 original_files,
             )
@@ -3199,4 +3198,3 @@ Generate the corrected project now.
                 response
             )
         )
-
