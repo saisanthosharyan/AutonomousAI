@@ -212,3 +212,14 @@ def test_detect_language(tmp_path):
     analyzer = ProjectAnalyzer()
 
     assert analyzer.detect_language(tmp_path) == "Python"
+
+def test_detect_static_web_project_with_only_index_html(tmp_path):
+    (tmp_path / 'index.html').write_text(
+        '<!DOCTYPE html><html><body><h1>Hello</h1></body></html>',
+        encoding='utf-8',
+    )
+
+    analyzer = ProjectAnalyzer()
+
+    assert analyzer.detect(str(tmp_path)) == 'static_web'
+

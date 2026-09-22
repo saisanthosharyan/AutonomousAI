@@ -444,19 +444,7 @@ class ProjectAnalyzer:
         if not index_html.is_file():
             return False
 
-        css_files = self._source_files(
-            root,
-            {".css"},
-        )
-
-        js_files = self._source_files(
-            root,
-            {".js"},
-        )
-
-        return bool(
-            css_files or js_files
-        )
+        return True
 
     # ==========================================================
     # SOURCE FILES
