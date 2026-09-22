@@ -44,6 +44,10 @@ export default function useWebSocket(sessionId, runId) {
           "WebSocket message:",
           data
         );
+        console.log(
+          "AUTODEV EVENT:",
+          JSON.stringify(data, null, 2)
+        );
 
         if (
           data.run_id &&

@@ -3,9 +3,9 @@ import {
   Home,
   FolderGit2,
   Settings,
-  History,
   Plus,
   Sparkles,
+  MessageSquare,
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -22,11 +22,6 @@ export default function Sidebar() {
       icon: FolderGit2,
       path: "/projects",
     },
-    {
-      name: "History",
-      icon: History,
-      path: "#",
-    },
   ];
 
   const tools = [
@@ -37,8 +32,11 @@ export default function Sidebar() {
     },
   ];
 
-  const handleNewBuild = () => {
+  const handleNewChat = () => {
     navigate("/");
+    window.dispatchEvent(
+      new CustomEvent("autodev:new-chat"),
+    );
   };
 
   return (
@@ -49,22 +47,25 @@ export default function Sidebar() {
         </div>
 
         <div className="aio-brand-text">
-          <span>AutoDev</span><span>AI</span>
+          <span>AutoDev</span>
+          <span>AI</span>
         </div>
       </div>
 
       <button
         type="button"
         className="aio-new-build"
-        onClick={handleNewBuild}
+        onClick={handleNewChat}
       >
         <Plus size={18} strokeWidth={2.4} />
-        <span>New Build</span>
+        <span>New Chat</span>
       </button>
 
       <nav className="aio-sidebar-nav">
         <div className="aio-nav-section">
-          <span className="aio-nav-label">WORKSPACE</span>
+          <span className="aio-nav-label">
+            WORKSPACE
+          </span>
 
           {menu.map((item) => {
             const Icon = item.icon;
@@ -74,20 +75,47 @@ export default function Sidebar() {
                 key={item.name}
                 to={item.path}
                 className={({ isActive }) =>
-                  `aio-nav-item ${isActive ? "active" : ""}`
+                  `aio-nav-item ${
+                    isActive ? "active" : ""
+                  }`
                 }
               >
-                <Icon size={18} strokeWidth={2} />
+                <Icon
+                  size={18}
+                  strokeWidth={2}
+                />
+
                 <span>{item.name}</span>
               </NavLink>
             );
           })}
         </div>
 
+        <div className="aio-sidebar-history">
+          <div className="aio-sidebar-history-heading">
+            <span className="aio-nav-label">
+              RECENT CHATS
+            </span>
+
+            <MessageSquare size={13} />
+          </div>
+
+          <div
+            id="autodev-chat-history"
+            className="aio-sidebar-history-list"
+          >
+            <div className="aio-sidebar-history-empty">
+              <span>No chats yet</span>
+            </div>
+          </div>
+        </div>
+
         <div className="aio-nav-divider" />
 
         <div className="aio-nav-section">
-          <span className="aio-nav-label">TOOLS</span>
+          <span className="aio-nav-label">
+            TOOLS
+          </span>
 
           {tools.map((item) => {
             const Icon = item.icon;
@@ -98,7 +126,11 @@ export default function Sidebar() {
                 to={item.path}
                 className="aio-nav-item"
               >
-                <Icon size={18} strokeWidth={2} />
+                <Icon
+                  size={18}
+                  strokeWidth={2}
+                />
+
                 <span>{item.name}</span>
               </NavLink>
             );
@@ -108,11 +140,18 @@ export default function Sidebar() {
 
       <div className="aio-sidebar-bottom">
         <div className="aio-user-card">
-          <div className="aio-user-avatar">S</div>
+          <div className="aio-user-avatar">
+            S
+          </div>
 
           <div className="aio-user-info">
-            <span className="aio-user-name">Santhosh</span>
-            <span className="aio-user-plan">Free Plan</span>
+            <span className="aio-user-name">
+              Santhosh
+            </span>
+
+            <span className="aio-user-plan">
+              Free Plan
+            </span>
           </div>
 
           <div className="aio-online-dot" />

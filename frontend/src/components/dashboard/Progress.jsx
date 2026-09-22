@@ -9,66 +9,56 @@ const STEPS = [
   {
     key: "Planning",
     title: "Planning",
-    percent: 10,
   },
   {
     key: "Coding",
     title: "Generating Code",
-    percent: 30,
   },
   {
     key: "Building",
     title: "Building Project",
-    percent: 50,
   },
   {
-    key: "Executing",
+    key: "Execution",
     title: "Executing Project",
-    percent: 65,
-  },
-  {
-    key: "Debugging",
-    title: "Debugging",
-    percent: 70,
-  },
-  {
-    key: "Retrying",
-    title: "Self-Healing / Retry",
-    percent: 75,
-  },
-  {
-    key: "Validation",
-    title: "Validating Project",
-    percent: 80,
   },
   {
     key: "Testing",
     title: "Running Tests",
-    percent: 85,
   },
   {
     key: "Review",
     title: "AI Review",
-    percent: 90,
+  },
+  {
+    key: "Validation",
+    title: "Validating Project",
   },
   {
     key: "Evaluation",
     title: "Final Evaluation",
-    percent: 95,
+  },
+  {
+    key: "Saving",
+    title: "Saving Project",
   },
   {
     key: "Completed",
     title: "Completed",
-    percent: 100,
   },
 ];
 
 export default function Progress({ runState }) {
-  const progress = runState?.progress ?? 0;
+  const progress = Math.min(runState?.progress ?? 0, 100);
   const currentStep = runState?.step ?? "";
   const status = runState?.status ?? "queued";
 
   const failed = status === "failed";
+
+  const currentIndex = STEPS.findIndex(
+    (step) =>
+      currentStep.toLowerCase() === step.key.toLowerCase()
+  );
 
   return (
     <div className="rounded-2xl border border-gray-800 bg-gray-900 p-8 shadow-xl">
@@ -98,23 +88,23 @@ export default function Progress({ runState }) {
         <div
           className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-blue-500 transition-all duration-700"
           style={{
-            width: `${Math.min(progress, 100)}%`,
+            width: `${progress}%`,
           }}
         />
       </div>
 
       <div className="space-y-5">
-        {STEPS.map((step) => {
-          const completed =
-            progress >= step.percent;
+        {STEPS.map((step, index) => {
+          const isCurrent =
+            index === currentIndex;
 
-          const active =
-            currentStep
-              ?.toLowerCase()
-              .includes(step.key.toLowerCase());
+          const isCompleted =
+            currentIndex > index ||
+            (step.key === "Completed" &&
+              status === "completed");
 
           const isFailed =
-            failed && active;
+            failed && isCurrent;
 
           return (
             <div
@@ -127,12 +117,12 @@ export default function Progress({ runState }) {
                     size={22}
                     className="text-red-400"
                   />
-                ) : completed ? (
+                ) : isCompleted ? (
                   <CheckCircle2
                     size={22}
                     className="text-green-400"
                   />
-                ) : active ? (
+                ) : isCurrent ? (
                   <Loader2
                     size={22}
                     className="animate-spin text-cyan-400"
@@ -149,17 +139,21 @@ export default function Progress({ runState }) {
                 <div className="flex items-center justify-between">
                   <span
                     className={
-                      active
+                      isCurrent
                         ? "font-semibold text-white"
-                        : "text-gray-400"
+                        : isCompleted
+                          ? "text-gray-300"
+                          : "text-gray-500"
                     }
                   >
                     {step.title}
                   </span>
 
-                  <span className="text-sm text-gray-500">
-                    {step.percent}%
-                  </span>
+                  {isCurrent && (
+                    <span className="text-sm text-cyan-400">
+                      {progress}%
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
