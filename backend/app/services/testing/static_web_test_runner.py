@@ -478,30 +478,10 @@ class StaticWebTestRunner:
             "errors": [],
         }
 
-        worker = threading.Thread(
-            target=self._run_browser_test,
-            args=(project, result),
-            daemon=True,
+        self._run_browser_test(
+            project,
+            result,
         )
-
-        worker.start()
-
-        worker.join(
-            timeout=(self.BROWSER_TIMEOUT / 1000) + 15
-        )
-
-        if worker.is_alive():
-            logger.error(
-                "Browser runtime testing timed out."
-            )
-
-            tests.append(
-                (
-                    "Browser runtime execution",
-                    False,
-                )
-            )
-            return
 
         browser_errors = result.get(
             "errors",
