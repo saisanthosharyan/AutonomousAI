@@ -1268,6 +1268,16 @@ class RetryManager:
         normalized = problems.lower()
 
         no_problem_phrases = [
+            "none",
+            "none.",
+            "n/a",
+            "n/a.",
+            "no issues",
+            "no issues.",
+            "no problems",
+            "no problems.",
+            "no actionable problems",
+            "no actionable problems.",
             "no significant defects",
             "no significant issues",
             "no significant problems",
