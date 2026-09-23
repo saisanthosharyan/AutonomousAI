@@ -393,3 +393,84 @@ def test_retry_manager_rejects_empty_code(tmp_path):
         assert str(exc) == (
             "Generated project code cannot be empty."
         )
+
+
+def test_extract_review_problems_accepts_clean_review():
+    review = """
+## Problems Found
+
+None.
+
+## Possible Runtime Errors
+
+No concrete runtime errors identified.
+"""
+
+    assert RetryManager._extract_review_problems(review) == ""
+
+
+def test_extract_review_problems_accepts_no_issues_variants():
+    clean_values = [
+        "None",
+        "N/A",
+        "No issues.",
+        "No problems.",
+        "No problems found.",
+        "No actionable problems.",
+    ]
+
+    for value in clean_values:
+        review = f"""
+## Problems Found
+
+{value}
+
+## Possible Runtime Errors
+
+None.
+"""
+
+        assert RetryManager._extract_review_problems(review) == ""
+
+
+def test_extract_review_problems_detects_real_problem():
+    review = """
+## Problems Found
+
+The generated project is missing the required CSS file.
+
+## Possible Runtime Errors
+
+No runtime errors identified.
+"""
+
+    assert (
+        RetryManager._extract_review_problems(review)
+        == "The generated project is missing the required CSS file."
+    )
+
+
+def test_extract_review_problems_does_not_ignore_real_problem_with_clean_words():
+    reviews = [
+        "None of the required files are generated.",
+        "None of the buttons work.",
+        "There are no issues with the HTML.",
+        "No issues found in the project.",
+        "The project has no problems with authentication.",
+    ]
+
+    for problem in reviews:
+        review = f"""
+## Problems Found
+
+{problem}
+
+## Possible Runtime Errors
+
+None.
+"""
+
+        assert (
+            RetryManager._extract_review_problems(review)
+            == problem
+        )

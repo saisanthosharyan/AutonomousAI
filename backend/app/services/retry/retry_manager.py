@@ -1265,9 +1265,9 @@ class RetryManager:
         if not problems:
             return ""
 
-        normalized = problems.lower()
+        normalized = problems.strip().lower()
 
-        no_problem_phrases = [
+        clean_values = {
             "none",
             "none.",
             "n/a",
@@ -1283,15 +1283,13 @@ class RetryManager:
             "no significant problems",
             "no actual issues",
             "no problems found",
+            "no problems found.",
             "no defects found",
             "there are no significant defects",
             "there are no significant issues",
-        ]
+        }
 
-        if any(
-            phrase in normalized
-            for phrase in no_problem_phrases
-        ):
+        if normalized in clean_values:
             return ""
 
         return problems
