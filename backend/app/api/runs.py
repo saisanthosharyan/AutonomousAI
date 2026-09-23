@@ -96,6 +96,7 @@ async def create_background_run(
     request: CreateRunRequest,
     current_user: User = Depends(get_current_user),
 ):
+    print("🔥🔥🔥 create_background_run() EXECUTED", flush=True)
     db = SessionLocal()
 
     try:
@@ -159,6 +160,8 @@ async def create_background_run(
         db.close()
 
     try:
+        print(f"🔥 POST /runs reached RunJobManager.start() for {run_id}", flush=True)
+        logger.info("DEBUG: ABOUT TO CALL RunJobManager.start(): %s", run_id)
         RunJobManager.start(
             run_id=run_id,
             user_id=current_user.id,

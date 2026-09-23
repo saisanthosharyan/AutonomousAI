@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 
 const AUTH_TOKEN_KEY = "autodev_access_token";
+const MAX_RECONNECT_ATTEMPTS = 10;
+const RECONNECT_DELAY = 1500;
 
 export default function useWebSocket(sessionId, runId) {
   const [runState, setRunState] = useState(null);
@@ -8,207 +10,277 @@ export default function useWebSocket(sessionId, runId) {
   const [connected, setConnected] = useState(false);
 
   const ws = useRef(null);
+  const reconnectTimer = useRef(null);
+  const reconnectAttempts = useRef(0);
+  const stopped = useRef(false);
 
   useEffect(() => {
     if (!sessionId || !runId) {
       return undefined;
     }
 
-    const token =
-      localStorage.getItem(AUTH_TOKEN_KEY);
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
 
     if (!token) {
       return undefined;
     }
 
-    const socket = new WebSocket(
-      `ws://127.0.0.1:8000/ws/${sessionId}?token=${encodeURIComponent(token)}`
-    );
+    stopped.current = false;
+    reconnectAttempts.current = 0;
 
-    ws.current = socket;
+    const connect = () => {
+      if (stopped.current) {
+        return;
+      }
 
-    socket.onopen = () => {
-      console.log(
-        "WebSocket connected for run:",
-        runId
+      if (
+        ws.current &&
+        (
+          ws.current.readyState === WebSocket.OPEN ||
+          ws.current.readyState === WebSocket.CONNECTING
+        )
+      ) {
+        return;
+      }
+
+      const socket = new WebSocket(
+        `ws://127.0.0.1:8000/ws/${sessionId}?token=${encodeURIComponent(token)}`
       );
 
-      setConnected(true);
-    };
+      ws.current = socket;
 
-    socket.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
+      socket.onopen = () => {
+        if (stopped.current || ws.current !== socket) {
+          return;
+        }
 
         console.log(
-          "WebSocket message:",
-          data
-        );
-        console.log(
-          "AUTODEV EVENT:",
-          JSON.stringify(data, null, 2)
+          "WebSocket connected for run:",
+          runId
         );
 
-        if (
-          data.run_id &&
-          data.run_id !== runId
-        ) {
+        reconnectAttempts.current = 0;
+        setConnected(true);
+      };
+
+      socket.onmessage = (event) => {
+        if (stopped.current || ws.current !== socket) {
+          return;
+        }
+
+        try {
+          const data = JSON.parse(event.data);
+
           console.log(
-            "Ignoring message from different run:",
-            data.run_id
+            "WebSocket message:",
+            data
+          );
+
+          console.log(
+            "AUTODEV EVENT:",
+            JSON.stringify(data, null, 2)
+          );
+
+          if (
+            data.run_id &&
+            data.run_id !== runId
+          ) {
+            console.log(
+              "Ignoring message from different run:",
+              data.run_id
+            );
+            return;
+          }
+
+          setEvents((previous) => [
+            ...previous,
+            data,
+          ]);
+
+          if (
+            data.type === "run_state" ||
+            data.type === "progress"
+          ) {
+            setRunState((previous) => ({
+              ...previous,
+              run_id: runId,
+              session_id:
+                data.session_id ??
+                previous?.session_id ??
+                sessionId,
+              status:
+                data.status ??
+                previous?.status ??
+                "running",
+              step:
+                data.step ??
+                data.current_step ??
+                previous?.step ??
+                null,
+              progress:
+                typeof data.progress === "number"
+                  ? data.progress
+                  : previous?.progress ?? 0,
+              message:
+                data.message ??
+                previous?.message ??
+                "",
+              error:
+                data.error ??
+                previous?.error ??
+                null,
+            }));
+          }
+
+          if (data.type === "status") {
+            setRunState((previous) => ({
+              ...previous,
+              run_id: runId,
+              session_id:
+                previous?.session_id ??
+                sessionId,
+              status:
+                data.status ??
+                previous?.status ??
+                "running",
+              step:
+                data.step ??
+                data.current_step ??
+                previous?.step ??
+                null,
+              progress:
+                typeof data.progress === "number"
+                  ? data.progress
+                  : previous?.progress ?? 0,
+              message:
+                data.message ??
+                previous?.message ??
+                "",
+              error:
+                data.error ??
+                previous?.error ??
+                null,
+            }));
+          }
+
+          if (data.type === "error") {
+            setRunState((previous) => ({
+              ...previous,
+              run_id: runId,
+              session_id:
+                previous?.session_id ??
+                sessionId,
+              status: "failed",
+              error:
+                data.message ||
+                data.error ||
+                "WebSocket reported an error.",
+              message:
+                data.message ||
+                data.error ||
+                "WebSocket reported an error.",
+            }));
+          }
+
+          if (data.type === "complete") {
+            setRunState((previous) => ({
+              ...previous,
+              run_id: runId,
+              session_id:
+                previous?.session_id ??
+                sessionId,
+              status: "completed",
+              progress: 100,
+              step: "Completed",
+              message:
+                data.message ||
+                "Project generation completed successfully.",
+              error: null,
+            }));
+          }
+        } catch (error) {
+          console.error(
+            "Failed to parse WebSocket message:",
+            error
+          );
+        }
+      };
+
+      socket.onerror = (error) => {
+        console.error(
+          "WebSocket error:",
+          error
+        );
+
+        if (ws.current === socket) {
+          setConnected(false);
+        }
+      };
+
+      socket.onclose = (event) => {
+        console.log(
+          "WebSocket closed:",
+          event.code,
+          event.reason
+        );
+
+        if (ws.current === socket) {
+          ws.current = null;
+          setConnected(false);
+        }
+
+        if (stopped.current) {
+          return;
+        }
+
+        if (reconnectAttempts.current >= MAX_RECONNECT_ATTEMPTS) {
+          console.error(
+            "WebSocket maximum reconnect attempts reached."
           );
           return;
         }
 
-        setEvents((previous) => [
-          ...previous,
-          data,
-        ]);
+        reconnectAttempts.current += 1;
 
-        if (
-          data.type === "run_state" ||
-          data.type === "progress"
-        ) {
-          setRunState((previous) => ({
-            ...previous,
-            run_id: runId,
-            session_id:
-              data.session_id ??
-              previous?.session_id ??
-              sessionId,
-            status:
-              data.status ??
-              previous?.status ??
-              "running",
-            step:
-              data.step ??
-              data.current_step ??
-              previous?.step ??
-              null,
-            progress:
-              typeof data.progress === "number"
-                ? data.progress
-                : previous?.progress ?? 0,
-            message:
-              data.message ??
-              previous?.message ??
-              "",
-            error:
-              data.error ??
-              previous?.error ??
-              null,
-          }));
-        }
-
-        if (data.type === "status") {
-          setRunState((previous) => ({
-            ...previous,
-            run_id: runId,
-            session_id:
-              previous?.session_id ??
-              sessionId,
-            status:
-              data.status ??
-              previous?.status ??
-              "running",
-            step:
-              data.step ??
-              data.current_step ??
-              previous?.step ??
-              null,
-            progress:
-              typeof data.progress === "number"
-                ? data.progress
-                : previous?.progress ?? 0,
-            message:
-              data.message ??
-              previous?.message ??
-              "",
-            error:
-              data.error ??
-              previous?.error ??
-              null,
-          }));
-        }
-
-        if (data.type === "error") {
-          setRunState((previous) => ({
-            ...previous,
-            run_id: runId,
-            session_id:
-              previous?.session_id ??
-              sessionId,
-            status: "failed",
-            error:
-              data.message ||
-              data.error ||
-              "WebSocket reported an error.",
-            message:
-              data.message ||
-              data.error ||
-              "WebSocket reported an error.",
-          }));
-        }
-
-        if (data.type === "complete") {
-          setRunState((previous) => ({
-            ...previous,
-            run_id: runId,
-            session_id:
-              previous?.session_id ??
-              sessionId,
-            status: "completed",
-            progress: 100,
-            step: "Completed",
-            message:
-              data.message ||
-              "Project generation completed successfully.",
-            error: null,
-          }));
-        }
-      } catch (error) {
-        console.error(
-          "Failed to parse WebSocket message:",
-          error
+        console.log(
+          `Reconnecting WebSocket (${reconnectAttempts.current}/${MAX_RECONNECT_ATTEMPTS})...`
         );
-      }
+
+        reconnectTimer.current = setTimeout(
+          connect,
+          RECONNECT_DELAY
+        );
+      };
     };
 
-    socket.onerror = (error) => {
-      console.error(
-        "WebSocket error:",
-        error
-      );
-
-      setConnected(false);
-    };
-
-    socket.onclose = (event) => {
-      console.log(
-        "WebSocket closed:",
-        event.code,
-        event.reason
-      );
-
-      setConnected(false);
-    };
+    connect();
 
     return () => {
-      if (ws.current === socket) {
-        ws.current = null;
+      stopped.current = true;
+
+      if (reconnectTimer.current) {
+        clearTimeout(reconnectTimer.current);
+        reconnectTimer.current = null;
       }
 
+      const socket = ws.current;
+
+      ws.current = null;
+
       if (
-        socket.readyState ===
-          WebSocket.OPEN ||
-        socket.readyState ===
-          WebSocket.CONNECTING
+        socket &&
+        (
+          socket.readyState === WebSocket.OPEN ||
+          socket.readyState === WebSocket.CONNECTING
+        )
       ) {
         socket.close(
           1000,
           "Run changed"
         );
       }
+
+      setConnected(false);
     };
   }, [sessionId, runId]);
 

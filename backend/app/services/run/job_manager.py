@@ -22,7 +22,6 @@ class RunJobManager:
     """
 
     _tasks: dict[str, asyncio.Task] = {}
-
     _semaphore: asyncio.Semaphore | None = None
 
     @classmethod
@@ -55,9 +54,18 @@ class RunJobManager:
         Schedule a background AutoDev-AI run.
         """
 
+        logger.info(
+            "DEBUG: RunJobManager.start() ENTERED: %s",
+            run_id,
+        )
+
         existing_task = cls._tasks.get(run_id)
 
         if existing_task is not None and not existing_task.done():
+            logger.warning(
+                "Run %s is already active.",
+                run_id,
+            )
             raise RuntimeError(
                 f"Run {run_id} is already active."
             )
@@ -76,6 +84,12 @@ class RunJobManager:
         )
 
         cls._tasks[run_id] = task
+
+        logger.info(
+            "DEBUG: Background asyncio task CREATED: %s | done=%s",
+            run_id,
+            task.done(),
+        )
 
         task.add_done_callback(
             lambda completed_task: cls._task_done(
@@ -104,11 +118,19 @@ class RunJobManager:
         task = cls._tasks.get(run_id)
 
         if task is None or task.done():
+            logger.info(
+                "No active background task found to cancel: %s",
+                run_id,
+            )
             return False
 
         cancelled = task.cancel()
 
         if not cancelled:
+            logger.warning(
+                "Failed to cancel background task: %s",
+                run_id,
+            )
             return False
 
         db = SessionLocal()
@@ -168,6 +190,13 @@ class RunJobManager:
 
         cls._tasks.pop(run_id, None)
 
+        logger.info(
+            "DEBUG: Background task finished: %s | done=%s | cancelled=%s",
+            run_id,
+            task.done(),
+            task.cancelled(),
+        )
+
         try:
             task.result()
 
@@ -180,6 +209,12 @@ class RunJobManager:
         except Exception:
             logger.exception(
                 "Background run job failed unexpectedly: %s",
+                run_id,
+            )
+
+        else:
+            logger.info(
+                "DEBUG: Background task completed without exception: %s",
                 run_id,
             )
 
@@ -200,6 +235,11 @@ class RunJobManager:
         Execute the actual AutoDev-AI workflow.
         """
 
+        logger.info(
+            "DEBUG: _execute() ENTERED: %s",
+            run_id,
+        )
+
         semaphore = cls._get_semaphore()
 
         try:
@@ -214,14 +254,36 @@ class RunJobManager:
                     run_id,
                 )
 
+                logger.info(
+                    "DEBUG: Creating LLM for run: %s | provider=%s | model=%s",
+                    run_id,
+                    provider,
+                    model,
+                )
+
                 llm = LLMRouter.get_llm(
                     provider=provider,
                     api_key=api_key,
                     model=model,
                 )
 
+                logger.info(
+                    "DEBUG: LLM created successfully: %s",
+                    run_id,
+                )
+
                 orchestrator = AgentOrchestrator(
                     llm=llm,
+                )
+
+                logger.info(
+                    "DEBUG: AgentOrchestrator created: %s",
+                    run_id,
+                )
+
+                logger.info(
+                    "DEBUG: Starting orchestrator.execute(): %s",
+                    run_id,
                 )
 
                 result = await orchestrator.execute(
@@ -230,6 +292,11 @@ class RunJobManager:
                     session_id=session_id,
                     run_id=run_id,
                     user_id=user_id,
+                )
+
+                logger.info(
+                    "DEBUG: orchestrator.execute() returned: %s",
+                    run_id,
                 )
 
                 add_message(
@@ -316,6 +383,3 @@ class RunJobManager:
             return False
 
         return not task.done()
-
-
-
