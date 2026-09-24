@@ -596,8 +596,9 @@ class RetryManager:
             attempt_start = time.monotonic()
 
             try:
-                test_result = self.tester.run(
-                    current_project["project_path"]
+                test_result = await asyncio.to_thread(
+                    self.tester.run,
+                    current_project["project_path"],
                 )
 
             except Exception as exc:
@@ -1265,7 +1266,16 @@ class RetryManager:
         if not problems:
             return ""
 
-        normalized = problems.strip().lower()
+        problems = "\n".join(
+            line.strip()
+            for line in problems.splitlines()
+            if line.strip() not in {"---", "***", "___"}
+        ).strip()
+
+        if not problems:
+            return ""
+
+        normalized = problems.lower()
 
         clean_values = {
             "none",

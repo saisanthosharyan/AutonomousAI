@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4.1-mini"
 
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-2.5-flash"
+    GEMINI_MODEL: str = "gemini-3.6-flash"
 
     # --------------------------------------------------
     # Database
