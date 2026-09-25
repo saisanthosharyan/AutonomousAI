@@ -119,7 +119,7 @@ export default function useWebSocket(sessionId, runId) {
                 null,
               progress:
                 typeof data.progress === "number"
-                  ? data.progress
+                  ? Math.max(data.progress, previous?.progress ?? 0)
                   : previous?.progress ?? 0,
               message:
                 data.message ??
@@ -150,7 +150,7 @@ export default function useWebSocket(sessionId, runId) {
                 null,
               progress:
                 typeof data.progress === "number"
-                  ? data.progress
+                  ? Math.max(data.progress, previous?.progress ?? 0)
                   : previous?.progress ?? 0,
               message:
                 data.message ??

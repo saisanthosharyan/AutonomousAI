@@ -535,7 +535,7 @@ export default function ChatBox() {
   };
 
   const effectiveRunState =
-    syncedRunState || runState;
+    runState || syncedRunState;
 
   const isFailed =
     effectiveRunState?.status === "failed";
