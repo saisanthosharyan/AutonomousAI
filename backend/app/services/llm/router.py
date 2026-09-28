@@ -9,6 +9,7 @@ from app.services.llm.fallback_service import FallbackLLMService
 from app.services.llm.providers.gemini_service import GeminiService
 from app.services.llm.providers.openai_service import OpenAIService
 from app.services.llm.providers.ollama_service import OllamaService
+from app.services.llm.providers.openrouter_service import OpenRouterService
 
 
 class LLMRouter:
@@ -28,11 +29,13 @@ class LLMRouter:
         "ollama": OllamaService,
         "gemini": GeminiService,
         "openai": OpenAIService,
+        "openrouter": OpenRouterService,
     }
 
     DEFAULT_PROVIDER_ORDER = [
         "gemini",
         "openai",
+        "openrouter",
         "ollama",
     ]
 

@@ -299,6 +299,25 @@ class RunJobManager:
                     run_id,
                 )
 
+                db = SessionLocal()
+
+                try:
+                    update_run(
+                        db,
+                        run_id,
+                        user_id=user_id,
+                        status="completed",
+                        current_step="Completed",
+                        progress=100,
+                        message="Project generation completed successfully.",
+                        result=result,
+                        error=None,
+                        completed=True,
+                    )
+
+                finally:
+                    db.close()
+
                 add_message(
                     session_id,
                     "assistant",
