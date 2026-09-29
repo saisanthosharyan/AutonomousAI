@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 import time
@@ -32,35 +32,35 @@ class AgentOrchestrator:
     Final pipeline:
 
         User Request
-            ↓
+            ?
         Planner Agent
-            ↓
+            ?
         Coder Agent
-            ↓
+            ?
         Project Builder
-            ↓
+            ?
         Execution
-            ↓
+            ?
         Execution Self-Healing
-            ↓
+            ?
         Automated Tests
-            ↓
+            ?
         Test Self-Healing
-            ↓
+            ?
         AI Review
-            ↓
+            ?
         Review Self-Healing
-            ↓
+            ?
         Rebuild
-            ↓
+            ?
         AI Review Again
-            ↓
+            ?
         Final Validation
-            ↓
+            ?
         Evaluation
-            ↓
+            ?
         Database Save
-            ↓
+            ?
         Final Result
     """
 
@@ -316,6 +316,183 @@ class AgentOrchestrator:
                 str(exc)
             )
 
+    async def _run_final_validation_with_repair(
+        self,
+        project: dict[str, Any],
+        code: str,
+        task: Task,
+        original_request: str,
+        review: str,
+        tests: dict[str, Any],
+        max_retries: int = 2,
+    ) -> dict[str, Any]:
+        """
+        Run final validation with limited autonomous repair attempts.
+
+        If validation fails:
+            validation failure
+                ?
+            FixerAgent
+                ?
+            ProjectBuilder.rebuild()
+                ?
+            validation again
+
+        The shared RetryManager repair engine is reused so final
+        validation repairs follow the same safety and history rules
+        as execution, testing, and review repairs.
+        """
+
+        current_project = project
+        current_code = code
+
+        repair_history: list[dict[str, Any]] = []
+        attempts = 0
+        repairs = 0
+
+        validation: dict[str, Any] = {}
+
+        while True:
+            attempts += 1
+
+            validation = await self._run_validation(
+                current_project["project_path"],
+                task,
+            )
+
+            validation = validation or {}
+
+            if validation.get("valid", False):
+                return {
+                    "project": current_project,
+                    "code": current_code,
+                    "validation": validation,
+                    "repair_history": repair_history,
+                    "validation_retry_stats": {
+                        "attempts": attempts,
+                        "repairs": repairs,
+                        "successful": True,
+                    },
+                }
+
+            if repairs >= max_retries:
+                logger.error(
+                    "Final validation failed after %s repair attempt(s).",
+                    repairs,
+                )
+
+                return {
+                    "project": current_project,
+                    "code": current_code,
+                    "validation": validation,
+                    "repair_history": repair_history,
+                    "validation_retry_stats": {
+                        "attempts": attempts,
+                        "repairs": repairs,
+                        "successful": False,
+                    },
+                }
+
+            repairs += 1
+
+            logger.warning(
+                "Final validation failed. Starting repair attempt %s/%s.",
+                repairs,
+                max_retries,
+            )
+
+            missing_files = validation.get(
+                "missing_files",
+                [],
+            )
+
+            warnings = validation.get(
+                "warnings",
+                [],
+            )
+
+            errors = validation.get(
+                "errors",
+                [],
+            )
+
+            validation_error = (
+                "Final project validation reported issues.\n"
+                f"Missing files: {missing_files}\n"
+                f"Warnings: {warnings}\n"
+                f"Errors: {errors}"
+            )
+
+            debug_report = {
+                "type": "validation",
+                "category": "ValidationError",
+                "summary": validation_error,
+                "validation": validation,
+                "missing_files": missing_files,
+                "warnings": warnings,
+                "errors": errors,
+            }
+
+            repair_result = await self.retry_manager._repair_project(
+                current_project=current_project,
+                current_code=current_code,
+                debug_report=debug_report,
+                repair_history=repair_history,
+                retry_count=repairs,
+                category="ValidationError",
+                error=validation_error,
+                review=review,
+                tests=tests,
+                repair_type="validation",
+                original_request=original_request,
+            )
+
+            if not repair_result.get("success"):
+                logger.error(
+                    "Final validation repair attempt %s failed.",
+                    repairs,
+                )
+
+                return {
+                    "project": current_project,
+                    "code": current_code,
+                    "validation": validation,
+                    "repair_history": repair_history,
+                    "validation_retry_stats": {
+                        "attempts": attempts,
+                        "repairs": repairs,
+                        "successful": False,
+                    },
+                    "error": repair_result.get(
+                        "error",
+                        "Final validation repair failed.",
+                    ),
+                }
+
+            current_project = repair_result.get(
+                "project",
+                current_project,
+            )
+
+            current_code = repair_result.get(
+                "code",
+                current_code,
+            )
+
+            history_entry = repair_result.get(
+                "history",
+            )
+
+            if history_entry:
+                repair_history.append(
+                    history_entry
+                )
+
+            logger.info(
+                "Final validation repair attempt %s completed. Re-validating project.",
+                repairs,
+            )
+
     async def _run_review(
         self,
         code: str,
@@ -446,6 +623,8 @@ class AgentOrchestrator:
         test_retry_stats: dict[str, Any] = {}
         review_retry_stats: dict[str, Any] = {}
         review_debug_report: dict[str, Any] = {}
+        validation_retry_stats: dict[str, Any] = {}
+        validation_repair_history: list = []
 
         logger.info(
             "Step 1/9 - Planning..."
@@ -1100,9 +1279,39 @@ class AgentOrchestrator:
 
         stage_start = time.monotonic()
 
-        validation = await self._run_validation(
-            project["project_path"],
-            plan,
+        validation_result = await self._run_final_validation_with_repair(
+            project=project,
+            code=code,
+            task=plan,
+            original_request=task,
+            review=review,
+            tests=test_result,
+            max_retries=2,
+        )
+
+        project = validation_result.get(
+            "project",
+            project,
+        )
+
+        code = validation_result.get(
+            "code",
+            code,
+        )
+
+        validation = validation_result.get(
+            "validation",
+            {},
+        )
+
+        validation_retry_stats = validation_result.get(
+            "validation_retry_stats",
+            {},
+        )
+
+        validation_repair_history = validation_result.get(
+            "repair_history",
+            [],
         )
 
         stage_times["validation"] = (
@@ -1313,6 +1522,8 @@ class AgentOrchestrator:
             "retry_stats": retry_stats,
             "test_retry_stats": test_retry_stats,
             "review_retry_stats": review_retry_stats,
+            "validation_retry_stats": validation_retry_stats,
+            "validation_repair_history": validation_repair_history,
             "review": review,
             "evaluation": evaluation,
             "improved_code": code,
@@ -1322,6 +1533,7 @@ class AgentOrchestrator:
                 "retry_stats": retry_stats,
                 "test_retry_stats": test_retry_stats,
                 "review_retry_stats": review_retry_stats,
+                "validation_retry_stats": validation_retry_stats,
             },
         }
 
