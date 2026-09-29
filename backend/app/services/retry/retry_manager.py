@@ -181,9 +181,10 @@ class RetryManager:
 
     async def execute_with_retry(
         self,
-        project: dict,
-        code: str,
+        project,
+        code,
         review=None,
+        original_request="",
     ):
         """
         Execute a project and automatically repair execution failures.
@@ -451,6 +452,7 @@ class RetryManager:
                 error=stderr,
                 review=review,
                 repair_type="execution",
+                original_request=original_request,
             )
 
             if not repair_result["success"]:
@@ -538,9 +540,10 @@ class RetryManager:
 
     async def test_with_retry(
         self,
-        project: dict,
-        code: str,
+        project,
+        code,
         review=None,
+        original_request="",
     ):
         """
         Run project tests and automatically repair test failures.
@@ -817,6 +820,7 @@ class RetryManager:
                 review=review,
                 tests=test_result,
                 repair_type="test",
+                original_request=original_request,
             )
 
             if not repair_result["success"]:
@@ -904,13 +908,14 @@ class RetryManager:
 
     async def review_with_retry(
         self,
-        project: dict,
-        code: str,
-        review: str,
+        project,
+        code,
+        review,
         reviewer,
         validator,
         task=None,
-        max_review_retries: int = 2,
+        max_review_retries=2,
+        original_request="",
     ):
         """
         Repair actionable reviewer findings.
@@ -1014,6 +1019,7 @@ class RetryManager:
                 review=current_review,
                 tests=None,
                 repair_type="review",
+                original_request=original_request,
             )
 
             if not repair_result.get("success"):
@@ -1415,6 +1421,7 @@ class RetryManager:
         review=None,
         tests=None,
         repair_type: str = "execution",
+        original_request: str = "",
     ) -> dict:
         """
         Ask FixerAgent to repair the current project, validate the
@@ -1443,6 +1450,7 @@ class RetryManager:
         try:
             fixed_code = await self.fixer.run(
                 code=current_code,
+                original_request=original_request,
                 review=review,
                 tests=tests,
                 execution_error=debug_report,

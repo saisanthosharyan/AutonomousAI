@@ -688,6 +688,7 @@ class AgentOrchestrator:
                 await self.retry_manager.execute_with_retry(
                     project=project,
                     code=code,
+                    original_request=task,
                 )
             )
 
@@ -812,6 +813,7 @@ class AgentOrchestrator:
                 ) = await self.retry_manager.test_with_retry(
                     project=project,
                     code=code,
+                    original_request=task,
                 )
 
                 test_result = (
@@ -952,6 +954,7 @@ class AgentOrchestrator:
                     validator=self.validator,
                     task=plan,
                     max_review_retries=2,
+                    original_request=task,
                 )
             )
 

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import ast
 import json
@@ -1664,6 +1664,7 @@ class FixerAgent(BaseAgent):
     def _build_prompt(
         self,
         code: str,
+        original_request: str,
         review: str,
         validation: str,
         tests: str,
@@ -2005,6 +2006,14 @@ contents exactly once.
 
 Each FILE path must be unique.
 
+====================================================
+ORIGINAL USER REQUEST
+====================================================
+
+{original_request}
+
+====================================================
+
 ==========================================================
 CURRENT SOURCE PROJECT
 ==========================================================
@@ -2285,6 +2294,7 @@ Return ONLY FILE blocks.
     async def run(
         self,
         code,
+        original_request="",
         review=None,
         validation=None,
         tests=None,
@@ -2464,6 +2474,7 @@ Return ONLY FILE blocks.
 
         prompt = self._build_prompt(
             code=code,
+            original_request=original_request,
             review=review_text,
             validation=validation_text,
             tests=tests_text,
