@@ -1216,49 +1216,43 @@ class RetryManager:
     # ==================================================================
     # REVIEW PARSING
     # ==================================================================
-
+    
     @staticmethod
     def _extract_review_problems(
         review: str,
     ) -> str:
         """
-        Extract the Problems Found section from a reviewer report.
+        Extract actionable problems from the Problems Found section.
 
-        Optional suggestions are deliberately excluded.
+        Reviewer explanations, optional suggestions, and explicit
+        clean-review statements are not treated as defects.
         """
 
         if not review:
             return ""
 
-        marker = "## Problems Found"
+        marker_match = re.search(
+            r"^\s*##\s*Problems Found\s*$",
+            review,
+            re.IGNORECASE | re.MULTILINE,
+        )
 
-        if marker not in review:
+        if not marker_match:
             return ""
 
-        problems = review.split(
-            marker,
-            1,
-        )[1]
-
-        next_sections = [
-            "## Possible Runtime Errors",
-            "## Security Review",
-            "## Performance Review",
-            "## Code Quality",
-            "## Missing Required Files",
-            "## Final Suggestions",
-            "## Final Score",
+        problems = review[
+            marker_match.end():
         ]
 
-        positions = [
-            problems.find(section)
-            for section in next_sections
-            if problems.find(section) >= 0
-        ]
+        next_section_match = re.search(
+            r"^\s*##\s+",
+            problems,
+            re.IGNORECASE | re.MULTILINE,
+        )
 
-        if positions:
+        if next_section_match:
             problems = problems[
-                :min(positions)
+                :next_section_match.start()
             ]
 
         problems = problems.strip()
@@ -1266,40 +1260,71 @@ class RetryManager:
         if not problems:
             return ""
 
-        problems = "\n".join(
+        lines = [
             line.strip()
             for line in problems.splitlines()
-            if line.strip() not in {"---", "***", "___"}
-        ).strip()
+            if line.strip()
+            and line.strip() not in {
+                "---",
+                "***",
+                "___",
+            }
+        ]
 
-        if not problems:
+        if not lines:
             return ""
 
-        normalized = problems.lower()
+        problems = "\n".join(lines).strip()
 
-        clean_values = {
-            "none",
-            "none.",
-            "n/a",
-            "n/a.",
-            "no issues",
-            "no issues.",
-            "no problems",
-            "no problems.",
-            "no actionable problems",
-            "no actionable problems.",
-            "no significant defects",
-            "no significant issues",
-            "no significant problems",
-            "no actual issues",
+        normalized = re.sub(
+            r"\s+",
+            " ",
+            problems.lower(),
+        ).strip()
+
+        clean_patterns = [
+            r"^none\.?$",
+            r"^n/?a\.?$",
+            r"^no issues?\.?$",
+            r"^no problems?\.?$",
+            r"^no actionable problems?\.?$",
+            r"^no significant defects?( found)?\.?$",
+            r"^no significant issues?( found)?\.?$",
+            r"^no significant problems?( found)?\.?$",
+            r"^no actual issues?( found)?\.?$",
+            r"^no problems found\.?$",
+            r"^no defects found\.?$",
+            r"^there are no significant defects\.?$",
+            r"^there are no significant issues\.?$",
+            r"^there are no significant problems\.?$",
+            r"^no concrete issues?( were)? identified\.?$",
+            r"^no concrete defects?( were)? identified\.?$",
+        ]
+
+        if any(
+            re.fullmatch(pattern, normalized)
+            for pattern in clean_patterns
+        ):
+            return ""
+
+        clean_phrases = [
+            "no significant defects found",
+            "no significant issues found",
+            "no significant problems found",
+            "no actual issues found",
             "no problems found",
-            "no problems found.",
             "no defects found",
-            "there are no significant defects",
-            "there are no significant issues",
-        }
+            "no actionable problems found",
+            "no concrete issues identified",
+            "no concrete defects identified",
+            "no issues identified",
+            "no problems identified",
+        ]
 
-        if normalized in clean_values:
+        if any(
+            phrase in normalized
+            for phrase in clean_phrases
+        ):
             return ""
 
         return problems
