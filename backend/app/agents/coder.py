@@ -305,9 +305,18 @@ class CoderAgent(BaseAgent):
 
         try:
 
-            response = await llm.generate(
-                prompt
-            )
+            if hasattr(llm, "generate_validated"):
+
+                response = await llm.generate_validated(
+                    prompt,
+                    lambda value: "FILE:" in value,
+                )
+
+            else:
+
+                response = await llm.generate(
+                    prompt
+                )
 
         except Exception as exc:
 
@@ -806,9 +815,18 @@ No unnecessary files.
 
         try:
 
-            corrected_response = await llm.generate(
-                correction_prompt
-            )
+            if hasattr(llm, "generate_validated"):
+
+                corrected_response = await llm.generate_validated(
+                    correction_prompt,
+                    lambda value: "FILE:" in value,
+                )
+
+            else:
+
+                corrected_response = await llm.generate(
+                    correction_prompt
+                )
 
         except Exception as exc:
 

@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Callable
 
 from app.core.logger import logger
 from app.services.llm.base import BaseLLMService
@@ -60,6 +60,67 @@ class FallbackLLMService(BaseLLMService):
 
         raise RuntimeError(
             f"All configured LLM providers failed. "
+            f"Last error: {last_error}"
+        ) from last_error
+
+    async def generate_validated(
+        self,
+        prompt: str,
+        validator: Callable[[str], bool],
+    ) -> str:
+
+        last_error: Exception | None = None
+
+        for name, provider in self.providers:
+
+            try:
+
+                logger.info(
+                    f"Attempting validated text generation with provider: {name}"
+                )
+
+                result = await provider.generate(prompt)
+
+                if not isinstance(result, str):
+
+                    raise RuntimeError(
+                        "LLM provider returned a non-string response."
+                    )
+
+                if not result.strip():
+
+                    raise RuntimeError(
+                        "LLM provider returned an empty response."
+                    )
+
+                if not validator(result):
+
+                    raise RuntimeError(
+                        f"Provider {name} returned an invalid response."
+                    )
+
+                logger.info(
+                    f"Provider {name} generated a valid response."
+                )
+
+                return result
+
+            except Exception as e:
+
+                last_error = e
+
+                logger.warning(
+                    f"Provider {name} failed validated generation: {e}"
+                )
+
+                continue
+
+        logger.error(
+            "All configured LLM providers failed validated generation."
+        )
+
+        raise RuntimeError(
+            "All configured LLM providers failed validated generation. "
             f"Last error: {last_error}"
         ) from last_error
 
