@@ -121,7 +121,6 @@ class ProjectChecker:
         # -----------------------------------------
         # Static Web Project
         # -----------------------------------------
-
         elif project_type == "static_web":
 
             logger.info(
@@ -135,34 +134,20 @@ class ProjectChecker:
                 missing,
             )
 
-            self._check_file(
-                project / "style.css",
-                "style.css",
-                passed,
-                missing,
-            )
+            optional_files = [
+                ("style.css", project / "style.css"),
+                ("script.js", project / "script.js"),
+                ("README.md", project / "README.md"),
+                (".gitignore", project / ".gitignore"),
+            ]
 
-            self._check_file(
-                project / "script.js",
-                "script.js",
-                passed,
-                missing,
-            )
+            for display_name, file_path in optional_files:
 
-            self._check_file(
-                project / "README.md",
-                "README.md",
-                passed,
-                missing,
-            )
+                if file_path.is_file():
 
-            self._check_file(
-                project / ".gitignore",
-                ".gitignore",
-                passed,
-                missing,
-            )
-
+                    passed.append(
+                        display_name
+                    )
         # -----------------------------------------
         # Java
         # -----------------------------------------

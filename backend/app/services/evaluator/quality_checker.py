@@ -42,6 +42,8 @@ class QualityChecker:
             ".ts",
             ".jsx",
             ".tsx",
+            ".html",
+            ".css",
             ".java",
             ".cpp",
             ".hpp",

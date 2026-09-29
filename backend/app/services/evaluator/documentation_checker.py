@@ -7,23 +7,16 @@ class DocumentationChecker:
     """
     Evaluates project documentation quality.
 
-    Checks for:
-
-    - README.md
-    - LICENSE
-    - Python docstrings
-    - Code comments
-
-    Returns
-
-    {
-        "score": 90,
-        "missing": [...],
-        "found": [...]
-    }
+    Documentation requirements are adapted to the detected
+    project type so minimal valid projects are not penalized
+    for irrelevant documentation requirements.
     """
 
-    def check(self, project_path: str) ->dict:
+    def check(
+        self,
+        project_path: str,
+        project_type: str | None = None,
+    ) -> dict:
 
         logger.info(
             "Checking project documentation..."
@@ -44,15 +37,128 @@ class DocumentationChecker:
         found = []
         missing = []
 
-        # ------------------------------------------
-        # README
-        # ------------------------------------------
-
         readme = project / "README.md"
 
         if readme.exists():
 
             found.append("README.md")
+
+        licenses = [
+            "LICENSE",
+            "LICENSE.txt",
+            "LICENSE.md",
+        ]
+
+        for name in licenses:
+
+            if (project / name).is_file():
+
+                found.append(name)
+
+                break
+
+        if project_type == "static_web":
+
+            html_files = list(
+                project.rglob("*.html")
+            )
+
+            if html_files:
+
+                found.append(
+                    f"HTML documentation ({len(html_files)} files)"
+                )
+
+            else:
+
+                missing.append(
+                    "No HTML files found."
+                )
+
+            score = 100 if html_files else 0
+
+            logger.info(
+                f"Documentation score: {score}"
+            )
+
+            return {
+                "score": score,
+                "found": found,
+                "missing": missing,
+            }
+
+        extensions = {
+            ".py",
+            ".js",
+            ".ts",
+            ".jsx",
+            ".tsx",
+            ".java",
+            ".cpp",
+            ".c",
+        }
+
+        ignored_dirs = {
+            ".git",
+            ".venv",
+            "venv",
+            "__pycache__",
+            "node_modules",
+            "build",
+            "dist",
+        }
+
+        source_files = []
+
+        for file in project.rglob("*"):
+
+            if not file.is_file():
+                continue
+
+            if any(
+                part in ignored_dirs
+                for part in file.parts
+            ):
+                continue
+
+            if file.suffix.lower() in extensions:
+
+                source_files.append(file)
+
+        comment_files = 0
+        docstring_files = 0
+
+        for file in source_files:
+
+            try:
+
+                content = file.read_text(
+                    encoding="utf-8",
+                    errors="ignore",
+                )
+
+            except Exception:
+
+                continue
+
+            if (
+                "#" in content
+                or "//" in content
+                or "/*" in content
+            ):
+
+                comment_files += 1
+
+            if file.suffix == ".py":
+
+                if (
+                    '"""' in content
+                    or "'''" in content
+                ):
+
+                    docstring_files += 1
+
+        if readme.exists():
 
             try:
 
@@ -77,131 +183,12 @@ class DocumentationChecker:
 
             missing.append("README.md")
 
-        # ------------------------------------------
-        # LICENSE
-        # ------------------------------------------
-
-        licenses = [
-
-            "LICENSE",
-            "LICENSE.txt",
-            "LICENSE.md",
-
-        ]
-
-        license_found = False
-
-        for name in licenses:
-
-            if (project / name).exists():
-
-                found.append(name)
-
-                license_found = True
-
-                break
-
-        if not license_found:
+        if not any(
+            (project / name).is_file()
+            for name in licenses
+        ):
 
             missing.append("LICENSE")
-
-        # ------------------------------------------
-        # Source Files
-        # ------------------------------------------
-
-        extensions = {
-
-            ".py",
-            ".js",
-            ".ts",
-            ".jsx",
-            ".tsx",
-            ".java",
-            ".cpp",
-            ".c",
-
-        }
-
-        ignored_dirs = {
-
-            ".git",
-            ".venv",
-            "venv",
-            "__pycache__",
-            "node_modules",
-            "build",
-            "dist",
-
-        }
-
-        source_files = []
-
-        for file in project.rglob("*"):
-
-            if not file.is_file():
-                continue
-
-            if any(
-                part in ignored_dirs
-                for part in file.parts
-            ):
-                continue
-
-            if file.suffix.lower() in extensions:
-
-                source_files.append(file)
-
-        comment_files = 0
-
-        docstring_files = 0
-
-        total_files = len(source_files)
-
-        for file in source_files:
-
-            try:
-
-                content = file.read_text(
-                    encoding="utf-8",
-                    errors="ignore",
-                )
-
-            except Exception:
-
-                continue
-
-            # ----------------------------
-            # Comments
-            # ----------------------------
-
-            if (
-
-                "#" in content
-                or "//" in content
-                or "/*" in content
-
-            ):
-
-                comment_files += 1
-
-            # ----------------------------
-            # Python Docstrings
-            # ----------------------------
-
-            if file.suffix == ".py":
-
-                if (
-
-                    '"""' in content
-                    or "'''" in content
-
-                ):
-
-                    docstring_files += 1
-
-        # ------------------------------------------
-        # Evaluate
-        # ------------------------------------------
 
         if comment_files > 0:
 
@@ -209,7 +196,7 @@ class DocumentationChecker:
                 f"Comments ({comment_files} files)"
             )
 
-        else:
+        elif source_files:
 
             missing.append(
                 "No code comments found."
@@ -230,20 +217,20 @@ class DocumentationChecker:
                 "Python docstrings missing."
             )
 
-        # ------------------------------------------
-        # Score
-        # ------------------------------------------
+        if not source_files:
 
-        total_checks = len(found) + len(missing)
-
-        if total_checks == 0:
-
-            score = 0
+            score = 100
 
         else:
 
-            score = round(
-                (len(found) / total_checks) * 100
+            total_checks = len(found) + len(missing)
+
+            score = (
+                round(
+                    (len(found) / total_checks) * 100
+                )
+                if total_checks
+                else 100
             )
 
         logger.info(
@@ -251,11 +238,7 @@ class DocumentationChecker:
         )
 
         return {
-
             "score": score,
-
             "found": found,
-
             "missing": missing,
-
         }

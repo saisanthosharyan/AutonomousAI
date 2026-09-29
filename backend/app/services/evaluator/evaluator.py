@@ -112,7 +112,8 @@ class Evaluator:
 
         documentation = (
             self.documentation_checker.check(
-                project_path
+                project_path,
+                project_type,
             )
         )
 
