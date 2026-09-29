@@ -377,7 +377,15 @@ class StaticWebTestRunner:
             re.IGNORECASE,
         )
 
-        combined_js = ""
+        inline_scripts = re.findall(
+            r"<script\b(?![^>]*\bsrc=)[^>]*>(.*?)</script>",
+            html,
+            re.IGNORECASE | re.DOTALL,
+        )
+
+        combined_js = "\n".join(
+            inline_scripts
+        )
 
         for script in script_files:
             if script.startswith(
