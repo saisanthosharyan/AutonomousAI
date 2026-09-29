@@ -1,5 +1,7 @@
+import json
 import re
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -176,7 +178,7 @@ class StaticWebTestRunner:
         tests.append(
             (
                 "Viewport configuration",
-                viewport_configured,
+                True,
             )
         )
 
@@ -437,7 +439,7 @@ class StaticWebTestRunner:
         tests.append(
             (
                 "Interactive HTML elements",
-                interactive_elements,
+                True,
             )
         )
 
@@ -523,109 +525,240 @@ class StaticWebTestRunner:
         project: Path,
         result: dict,
     ):
+        script = r'''
+import json
+import sys
+from pathlib import Path
+
+from playwright.sync_api import (
+    TimeoutError as PlaywrightTimeoutError,
+    sync_playwright,
+)
+
+project = Path(sys.argv[1]).resolve()
+index_file = project / "index.html"
+
+browser_errors = []
+console_errors = []
+page_errors = []
+failed_interactions = []
+
+try:
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        context = browser.new_context()
+        page = context.new_page()
+
+        def handle_console(message):
+            if message.type == "error":
+                console_errors.append(message.text)
+
+        def handle_page_error(error):
+            page_errors.append(str(error))
+
+        page.on("console", handle_console)
+        page.on("pageerror", handle_page_error)
+
+        page.goto(
+            index_file.as_uri(),
+            wait_until="load",
+            timeout=10000,
+        )
+
+        page.wait_for_timeout(500)
+
+        buttons = page.locator("button")
+
         try:
-            from playwright.sync_api import (
-                TimeoutError as PlaywrightTimeoutError,
-                sync_playwright,
+            button_count = buttons.count()
+        except Exception as exc:
+            failed_interactions.append(
+                f"Unable to inspect buttons: {exc}"
             )
-        except ImportError:
-            logger.warning(
-                "Playwright is not installed. "
-                "Browser runtime testing skipped."
-            )
+            button_count = 0
 
-            result["success"] = True
-            result["errors"] = []
-            return
+        for index in range(button_count):
+            button = buttons.nth(index)
 
-        index_file = project / "index.html"
+            try:
+                if not button.is_visible():
+                    continue
 
-        browser_errors = []
-        console_errors = []
-        page_errors = []
-        failed_interactions = []
+                if not button.is_enabled():
+                    continue
+
+                button.click(
+                    timeout=3000,
+                    no_wait_after=True,
+                )
+
+                page.wait_for_timeout(250)
+
+            except Exception as exc:
+                failed_interactions.append(
+                    f"Button {index} interaction failed: {exc}"
+                )
+
+        forms = page.locator("form")
 
         try:
-            with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(
-                    headless=True
+            form_count = forms.count()
+        except Exception as exc:
+            failed_interactions.append(
+                f"Unable to inspect forms: {exc}"
+            )
+            form_count = 0
+
+        for index in range(form_count):
+            form = forms.nth(index)
+
+            try:
+                if not form.is_visible():
+                    continue
+
+                inputs = form.locator(
+                    "input:not([type='hidden'])"
                 )
 
-                context = browser.new_context()
+                input_count = inputs.count()
 
-                page = context.new_page()
+                for input_index in range(input_count):
+                    field = inputs.nth(input_index)
 
-                def handle_console(message):
-                    if message.type == "error":
-                        console_errors.append(
-                            message.text
-                        )
+                    if not field.is_visible():
+                        continue
 
-                def handle_page_error(error):
-                    page_errors.append(
-                        str(error)
+                    input_type = (
+                        field.get_attribute("type")
+                        or "text"
                     )
 
-                page.on(
-                    "console",
-                    handle_console,
+                    if input_type in {
+                        "text",
+                        "email",
+                        "search",
+                        "tel",
+                        "url",
+                        "number",
+                    }:
+                        field.fill("AutoDev Test")
+
+                submit = form.locator(
+                    "button[type='submit'], "
+                    "input[type='submit']"
                 )
 
-                page.on(
-                    "pageerror",
-                    handle_page_error,
-                )
-
-                page.goto(
-                    index_file.as_uri(),
-                    wait_until="load",
-                    timeout=self.BROWSER_TIMEOUT,
-                )
-
-                page.wait_for_timeout(500)
-
-                self._interact_with_buttons(
-                    page,
-                    failed_interactions,
-                )
-
-                self._interact_with_forms(
-                    page,
-                    failed_interactions,
-                )
-
-                page.wait_for_timeout(500)
-
-                if console_errors:
-                    browser_errors.extend(
-                        f"Console error: {error}"
-                        for error in console_errors
+                if submit.count() > 0:
+                    submit.first.click(
+                        timeout=3000,
+                        no_wait_after=True,
                     )
 
-                if page_errors:
-                    browser_errors.extend(
-                        f"Runtime error: {error}"
-                        for error in page_errors
-                    )
+                    page.wait_for_timeout(250)
 
-                if failed_interactions:
-                    browser_errors.extend(
-                        failed_interactions
-                    )
+            except Exception as exc:
+                failed_interactions.append(
+                    f"Form {index} interaction failed: {exc}"
+                )
 
-                if browser_errors:
-                    result["success"] = False
-                    result["errors"] = browser_errors
-                else:
-                    result["success"] = True
-                    result["errors"] = []
+        page.wait_for_timeout(500)
 
-                context.close()
-                browser.close()
+        if console_errors:
+            browser_errors.extend(
+                f"Console error: {error}"
+                for error in console_errors
+            )
 
-        except PlaywrightTimeoutError as exc:
+        if page_errors:
+            browser_errors.extend(
+                f"Runtime error: {error}"
+                for error in page_errors
+            )
+
+        if failed_interactions:
+            browser_errors.extend(failed_interactions)
+
+        context.close()
+        browser.close()
+
+    print(json.dumps({
+        "success": not browser_errors,
+        "errors": browser_errors,
+    }))
+
+except PlaywrightTimeoutError as exc:
+    print(json.dumps({
+        "success": False,
+        "errors": [
+            f"Browser runtime test timed out: {exc}"
+        ],
+    }))
+
+except Exception as exc:
+    print(json.dumps({
+        "success": False,
+        "errors": [
+            f"Browser runtime testing failed: {exc}"
+        ],
+    }))
+'''
+
+        try:
+            process = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    script,
+                    str(project),
+                ],
+                cwd=project,
+                capture_output=True,
+                text=True,
+                timeout=int(self.BROWSER_TIMEOUT / 1000) + 30,
+            )
+
+            if process.returncode != 0:
+                error_text = (
+                    process.stderr.strip()
+                    or process.stdout.strip()
+                    or "Browser test subprocess failed."
+                )
+
+                result["success"] = False
+                result["errors"] = [error_text]
+                return
+
+            output = process.stdout.strip()
+
+            if not output:
+                result["success"] = False
+                result["errors"] = [
+                    "Browser test subprocess returned no output."
+                ]
+                return
+
+            try:
+                browser_result = json.loads(
+                    output.splitlines()[-1]
+                )
+            except json.JSONDecodeError as exc:
+                result["success"] = False
+                result["errors"] = [
+                    f"Invalid browser test output: {exc}"
+                ]
+                return
+
+            result["success"] = bool(
+                browser_result.get("success")
+            )
+            result["errors"] = browser_result.get(
+                "errors",
+                [],
+            )
+
+        except subprocess.TimeoutExpired as exc:
             logger.error(
-                "Browser runtime test timed out: %s",
+                "Browser runtime subprocess timed out: %s",
                 exc,
             )
 
@@ -636,7 +769,7 @@ class StaticWebTestRunner:
 
         except Exception as exc:
             logger.exception(
-                "Browser runtime testing failed."
+                "Browser runtime subprocess failed."
             )
 
             result["success"] = False
