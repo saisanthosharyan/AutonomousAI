@@ -923,20 +923,25 @@ class RetryManager:
         Flow:
 
             Review
-              ↓
-            actionable problems?
-              ↓ yes
+            ↓
+            Is review complete?
+            ↓ no
+            Retry Reviewer
+            ↓
+            Is review complete?
+            ↓ yes
+            Actionable problems?
+            ↓ yes
             FixerAgent
-              ↓
+            ↓
             Rebuild
-              ↓
+            ↓
             Validate
-              ↓
+            ↓
             Review again
 
+        Incomplete reviewer responses are retried as reviewer failures.
         Review suggestions are not automatically treated as defects.
-        The repair loop is triggered only when the Problems Found
-        section contains an actual issue.
         """
 
         if not project:
@@ -963,13 +968,103 @@ class RetryManager:
         review_stats = {
             "attempts": 0,
             "repairs": 0,
+            "review_retries": 0,
             "successful": True,
         }
 
-        for attempt in range(
-            1,
-            max_review_retries + 1,
-        ):
+        reviewer_retries = 0
+        repair_attempts = 0
+
+        while True:
+
+            # ----------------------------------------------------------
+            # Ensure reviewer returned a complete review
+            # ----------------------------------------------------------
+
+            if not self._review_is_complete(
+                current_review
+            ):
+                if reviewer_retries >= max_review_retries:
+                    logger.warning(
+                        "Reviewer returned an incomplete review "
+                        "after %s retry attempt(s).",
+                        reviewer_retries,
+                    )
+
+                    review_stats["successful"] = False
+
+                    return {
+                        "project": current_project,
+                        "code": current_code,
+                        "review": current_review,
+                        "repair_history": repair_history,
+                        "review_stats": review_stats,
+                        "error": (
+                            "Reviewer Agent returned an incomplete "
+                            "review after retrying."
+                        ),
+                    }
+
+                reviewer_retries += 1
+                review_stats["review_retries"] = (
+                    reviewer_retries
+                )
+
+                logger.warning(
+                    "Reviewer returned an incomplete review. "
+                    "Retrying reviewer attempt %s/%s.",
+                    reviewer_retries,
+                    max_review_retries,
+                )
+
+                try:
+                    current_review = await reviewer(
+                        current_code,
+                        current_project["project_path"],
+                        task,
+                    )
+
+                except Exception as exc:
+                    logger.exception(
+                        "Reviewer failed during incomplete-review retry."
+                    )
+
+                    review_stats["successful"] = False
+
+                    return {
+                        "project": current_project,
+                        "code": current_code,
+                        "review": current_review,
+                        "repair_history": repair_history,
+                        "review_stats": review_stats,
+                        "error": (
+                            "Reviewer failed during incomplete-review "
+                            f"retry: {exc}"
+                        ),
+                    }
+
+                current_review = (
+                    current_review
+                    if isinstance(
+                        current_review,
+                        str,
+                    )
+                    else str(current_review)
+                )
+
+                current_review = current_review.strip()
+
+                logger.info(
+                    "Reviewer retry %s completed.",
+                    reviewer_retries,
+                )
+
+                continue
+
+            # ----------------------------------------------------------
+            # Extract actionable reviewer problems
+            # ----------------------------------------------------------
+
             problems = self._extract_review_problems(
                 current_review
             )
@@ -988,12 +1083,37 @@ class RetryManager:
                     "review_stats": review_stats,
                 }
 
-            review_stats["attempts"] += 1
+            # ----------------------------------------------------------
+            # Maximum repair attempts
+            # ----------------------------------------------------------
+
+            if repair_attempts >= max_review_retries:
+                review_stats["successful"] = False
+
+                logger.warning(
+                    "Maximum review repair attempts reached "
+                    "with actionable problems remaining."
+                )
+
+                return {
+                    "project": current_project,
+                    "code": current_code,
+                    "review": current_review,
+                    "repair_history": repair_history,
+                    "review_stats": review_stats,
+                    "error": (
+                        "Maximum review repair attempts reached "
+                        "with actionable problems remaining."
+                    ),
+                }
+
+            repair_attempts += 1
+            review_stats["attempts"] = repair_attempts
 
             logger.warning(
                 "Reviewer found actionable problems. "
                 "Starting review repair attempt %s/%s.",
-                attempt,
+                repair_attempts,
                 max_review_retries,
             )
 
@@ -1013,7 +1133,7 @@ class RetryManager:
                 current_code=current_code,
                 debug_report=debug_report,
                 repair_history=repair_history,
-                retry_count=attempt,
+                retry_count=repair_attempts,
                 category="ReviewFinding",
                 error=problems[:10000],
                 review=current_review,
@@ -1025,7 +1145,7 @@ class RetryManager:
             if not repair_result.get("success"):
                 logger.warning(
                     "Review repair attempt %s failed: %s",
-                    attempt,
+                    repair_attempts,
                     repair_result.get(
                         "error",
                         "Unknown repair failure.",
@@ -1185,44 +1305,42 @@ class RetryManager:
 
             logger.info(
                 "Re-review completed after repair attempt %s.",
-                attempt,
+                repair_attempts,
             )
 
-        # --------------------------------------------------------------
-        # Maximum review repairs reached
-        # --------------------------------------------------------------
-
-        remaining_problems = (
-            self._extract_review_problems(
-                current_review
-            )
-        )
-
-        if remaining_problems:
-            review_stats["successful"] = False
-
-            logger.warning(
-                "Maximum review repair attempts reached "
-                "with actionable problems remaining."
-            )
-
-        else:
-            logger.info(
-                "Review repair loop completed successfully."
-            )
-
-        return {
-            "project": current_project,
-            "code": current_code,
-            "review": current_review,
-            "repair_history": repair_history,
-            "review_stats": review_stats,
-        }
+            # Loop again.
+            #
+            # The next iteration first verifies that the new review
+            # contains all required sections before parsing problems.
 
     # ==================================================================
     # REVIEW PARSING
     # ==================================================================
-    
+    @staticmethod
+    def _review_is_complete(
+        review: str,
+    ) -> bool:
+        if not isinstance(review, str):
+            return False
+
+        review = review.strip()
+
+        if not review:
+            return False
+
+        required_sections = (
+            "Overall Summary",
+            "Strengths",
+            "Problems Found",
+            "Final Score",
+        )
+
+        return all(
+            section.lower() in review.lower()
+            for section in required_sections
+        )
+
+
     @staticmethod
     def _extract_review_problems(
         review: str,
@@ -1325,11 +1443,32 @@ class RetryManager:
             "no concrete defects identified",
             "no issues identified",
             "no problems identified",
+            "no issues are evident",
+            "no problems are evident",
+            "no issues were found",
+            "no problems were found",
+            "no actionable problems were identified",
+            "no concrete issues were identified",
+            "all requirements are satisfied",
         ]
 
         if any(
             phrase in normalized
             for phrase in clean_phrases
+        ):
+            return ""
+
+        clean_none_patterns = [
+            r"^none\b.*$",
+            r"^n/?a\b.*$",
+        ]
+
+        if any(
+            re.fullmatch(
+                pattern,
+                normalized,
+            )
+            for pattern in clean_none_patterns
         ):
             return ""
 
