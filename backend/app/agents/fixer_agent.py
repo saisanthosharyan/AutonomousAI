@@ -359,6 +359,28 @@ class FixerAgent(BaseAgent):
     # EXTRACT FILE BLOCKS
     # ==========================================================
 
+    @staticmethod
+    def _clean_file_path(path: str) -> str:
+        """
+        Remove common Markdown formatting accidentally attached to file paths.
+        """
+
+        path = path.strip()
+
+        while len(path) >= 2 and path.startswith("**") and path.endswith("**"):
+            path = path[2:-2].strip()
+
+        while len(path) >= 2 and path.startswith("`") and path.endswith("`"):
+            path = path[1:-1].strip()
+
+        if path.endswith("**"):
+            path = path[:-2].rstrip()
+
+        if path.startswith("**"):
+            path = path[2:].lstrip()
+
+        return path
+
     def _extract_file_blocks(
         self,
         response: str,
@@ -380,7 +402,7 @@ class FixerAgent(BaseAgent):
 
         for index, match in enumerate(matches):
 
-            path = match.group(1).strip()
+            path = self._clean_file_path(match.group(1))
 
             start = match.end()
 
