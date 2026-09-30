@@ -284,6 +284,17 @@ If none are evident, say:
 ## Security Review
 
 Check only applicable security risks.
+When reviewing Python code, explicitly inspect for unsafe dynamic
+execution such as eval() and exec().
+
+If eval() or exec() processes user-controlled, generated, external,
+or otherwise untrusted input, report it as a security vulnerability.
+
+Also report arbitrary dynamic code execution when the source
+demonstrably exposes it.
+
+Do not report eval() or exec() merely because the words appear in
+comments, documentation, or string literals.
 
 Do not report SQL Injection, CSRF, authentication flaws, authorization flaws,
 command injection, file upload vulnerabilities, or similar issues when the
