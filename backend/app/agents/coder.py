@@ -758,6 +758,8 @@ Never generate:
 - secret certificates
 - credential files
 - real .env files
+- eval() or exec() on generated or user-controlled input
+- arbitrary dynamic code execution
 
 Use placeholders only when configuration is explicitly
 required.
@@ -1623,6 +1625,8 @@ Never generate:
 - secret certificates,
 - real credentials,
 - .env files containing secrets.
+- eval() or exec() on generated or user-controlled input,
+- arbitrary dynamic code execution.
 
 ====================================================
 FINAL RULE
@@ -2624,6 +2628,21 @@ Return ONLY FILE blocks.
         self,
         file_blocks: List[Tuple[str, str]],
     ) -> None:
+        """
+        Validate generated Python source files.
+
+        Checks:
+        1. Python syntax is valid.
+        2. Unsafe dynamic execution is rejected.
+
+        Generated applications should not execute arbitrary
+        Python expressions or statements through eval()/exec().
+        """
+
+        dangerous_builtins = {
+            "eval",
+            "exec",
+        }
 
         for path, content in file_blocks:
 
@@ -2632,7 +2651,7 @@ Return ONLY FILE blocks.
 
             try:
 
-                ast.parse(
+                tree = ast.parse(
                     content,
                     filename=path,
                 )
@@ -2657,8 +2676,36 @@ Return ONLY FILE blocks.
                     f"(line {line}, column {column})"
                 ) from exc
 
+            for node in ast.walk(tree):
+
+                if not isinstance(node, ast.Call):
+                    continue
+
+                if not isinstance(node.func, ast.Name):
+                    continue
+
+                function_name = node.func.id
+
+                if function_name not in dangerous_builtins:
+                    continue
+
+                line = getattr(
+                    node,
+                    "lineno",
+                    "unknown",
+                )
+
+                raise RuntimeError(
+                    f"Unsafe Python dynamic execution detected "
+                    f"in {path}: {function_name}() "
+                    f"at line {line}. "
+                    f"Do not use eval() or exec() in generated "
+                    f"application code. Implement the required "
+                    f"logic explicitly and safely."
+                )
+
         logger.info(
-            "Python syntax validation passed."
+            "Python syntax and security validation passed."
         )
 
     # ==========================================================
