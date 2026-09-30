@@ -9,12 +9,8 @@ class QualityChecker:
     Analyzes generated source code and detects
     common quality problems.
 
-    Returns
-
-    {
-        "score": 92,
-        "issues": [...]
-    }
+    Normal application output such as Python print()
+    in CLI applications is not treated as a debug issue.
     """
 
     def check(self, project_path: str) -> dict:
@@ -24,7 +20,6 @@ class QualityChecker:
         project = Path(project_path).resolve()
 
         if not project.exists():
-
             return {
                 "score": 0,
                 "issues": [
@@ -33,7 +28,6 @@ class QualityChecker:
             }
 
         issues = []
-
         source_files = []
 
         extensions = {
@@ -77,7 +71,6 @@ class QualityChecker:
                 source_files.append(file)
 
         if not source_files:
-
             return {
                 "score": 0,
                 "issues": [
@@ -94,153 +87,116 @@ class QualityChecker:
         for file in source_files:
 
             try:
-
                 content = file.read_text(
                     encoding="utf-8",
                     errors="ignore",
                 )
 
             except Exception:
-
                 continue
 
             relative = file.relative_to(project)
 
-            # -----------------------------------------
-            # TODO
-            # -----------------------------------------
-
             if "TODO" in content:
-
                 issues.append(
                     f"{relative}: TODO found."
                 )
 
-            # -----------------------------------------
-
             if "FIXME" in content:
-
                 issues.append(
                     f"{relative}: FIXME found."
                 )
 
-            # -----------------------------------------
-
             if "NotImplementedError" in content:
-
                 issues.append(
                     f"{relative}: NotImplementedError detected."
                 )
 
-            # -----------------------------------------
-
-            if "pass" in content and file.suffix == ".py":
-
+            if (
+                file.suffix == ".py"
+                and re.search(
+                    r"^\s*pass\s*(?:#.*)?$",
+                    content,
+                    re.MULTILINE,
+                )
+            ):
                 issues.append(
                     f"{relative}: pass statement detected."
                 )
 
-            # -----------------------------------------
-
             if "raise Exception" in content:
-
                 issues.append(
                     f"{relative}: Generic Exception used."
                 )
 
-            # -----------------------------------------
-
-            if "print(" in content:
-
+            if self._has_debug_print(
+                content,
+                file.suffix.lower(),
+            ):
                 issues.append(
-                    f"{relative}: Debug print() found."
+                    f"{relative}: Debug output statement found."
                 )
 
-            # -----------------------------------------
-
-            if "console.log(" in content:
-
+            if (
+                file.suffix.lower() in {
+                    ".js",
+                    ".ts",
+                    ".jsx",
+                    ".tsx",
+                }
+                and "console.log(" in content
+            ):
                 issues.append(
                     f"{relative}: console.log() found."
                 )
 
-            # -----------------------------------------
-
             if "debugger;" in content:
-
                 issues.append(
                     f"{relative}: debugger statement found."
                 )
 
-            # -----------------------------------------
-
             placeholders = [
-
                 "your code here",
                 "placeholder",
                 "coming soon",
                 "implement me",
                 "lorem ipsum",
-
             ]
 
             lower = content.lower()
 
             for placeholder in placeholders:
-
                 if placeholder in lower:
-
                     issues.append(
                         f"{relative}: Placeholder text detected."
                     )
 
-            # -----------------------------------------
-            # Empty Functions
-            # -----------------------------------------
-
             empty_python = re.findall(
-
                 r"def\s+\w+\(.*?\):\s+pass",
-
                 content,
-
                 re.DOTALL,
-
             )
 
             if empty_python:
-
                 issues.append(
                     f"{relative}: Empty Python function."
                 )
 
             empty_js = re.findall(
-
                 r"function\s+\w+\(.*?\)\s*{\s*}",
-
                 content,
-
                 re.DOTALL,
-
             )
 
             if empty_js:
-
                 issues.append(
                     f"{relative}: Empty JavaScript function."
                 )
 
-            # -----------------------------------------
-            # Large commented block
-            # -----------------------------------------
-
             if content.count("#") > 60:
-
                 issues.append(
                     f"{relative}: Excessive comments."
                 )
-
-        # ------------------------------------------------
 
         max_penalty = 50
 
@@ -263,9 +219,37 @@ class QualityChecker:
         )
 
         return {
-
             "score": score,
-
             "issues": issues,
-
         }
+
+    @staticmethod
+    def _has_debug_print(
+        content: str,
+        extension: str,
+    ) -> bool:
+        """
+        Detect obvious Python debug output without
+        treating normal CLI application print() calls
+        as quality problems.
+        """
+
+        if extension != ".py":
+            return False
+
+        debug_patterns = [
+            r"print\(\s*['\"]debug",
+            r"print\(\s*['\"]DEBUG",
+            r"print\(\s*['\"]trace",
+            r"print\(\s*['\"]TRACE",
+            r"print\(\s*['\"]testing",
+            r"print\(\s*['\"]TESTING",
+        ]
+
+        return any(
+            re.search(
+                pattern,
+                content,
+            )
+            for pattern in debug_patterns
+        )

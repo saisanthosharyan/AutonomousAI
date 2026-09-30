@@ -39,6 +39,12 @@ def create_orchestrator():
     # Keep the shared memory contract between the orchestrator
     # and RetryManager.
     orchestrator.retry_manager.memory = orchestrator.memory
+    orchestrator.retry_manager._repair_project = AsyncMock(
+        side_effect=lambda **kwargs: {
+            "success": True,
+            "project": kwargs["current_project"],
+        }
+    )
 
     return orchestrator
 

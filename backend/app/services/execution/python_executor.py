@@ -235,27 +235,14 @@ class PythonExecutor:
             )
 
             # --------------------------------------------------
-            # Interactive applications
+            # Interactive CLI applications
             # --------------------------------------------------
 
             if execution_mode == "interactive":
 
-                logger.warning(
-                    "Interactive application detected; "
-                    "execution skipped."
-                )
-
-                return self._finish(
-                    {
-                        "success": True,
-                        "stdout": "",
-                        "stderr": (
-                            "Interactive application detected; "
-                            "execution skipped."
-                        ),
-                        "return_code": 0,
-                    },
-                    start_time,
+                logger.info(
+                    "Interactive CLI application detected; "
+                    "running controlled smoke test."
                 )
 
             # --------------------------------------------------
@@ -313,7 +300,16 @@ class PythonExecutor:
                 encoding="utf-8",
                 errors="replace",
                 timeout=self.EXECUTION_TIMEOUT,
-                stdin=subprocess.DEVNULL,
+                stdin=(
+                    subprocess.DEVNULL
+                    if execution_mode != "interactive"
+                    else None
+                ),
+                input=(
+                    self._build_interactive_input(content)
+                    if execution_mode == "interactive"
+                    else None
+                ),
                 env=self._build_environment(project),
             )
 
@@ -899,6 +895,29 @@ class PythonExecutor:
                 content,
             )
         )
+
+
+    def _build_interactive_input(
+        self,
+        content: str,
+    ) -> str:
+        """
+        Build safe smoke-test input for interactive CLI programs.
+        """
+
+        lowered = content.lower()
+
+        if any(
+            marker in lowered
+            for marker in (
+                "calculator",
+                "expression",
+                "operator",
+            )
+        ):
+            return "2 + 3\n"
+
+        return "test\n"
 
     # ==========================================================
     # BUILD EXECUTION COMMAND

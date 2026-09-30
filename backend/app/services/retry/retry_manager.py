@@ -1435,6 +1435,9 @@ class RetryManager:
             "no significant defects found",
             "no significant issues found",
             "no significant problems found",
+            "no significant defects were found",
+            "no significant issues were found",
+            "no significant problems were found",
             "no actual issues found",
             "no problems found",
             "no defects found",
@@ -1453,14 +1456,14 @@ class RetryManager:
         ]
 
         if any(
-            phrase in normalized
+            normalized == phrase
+            or normalized == f"{phrase}."
             for phrase in clean_phrases
         ):
             return ""
-
         clean_none_patterns = [
-            r"^none\b.*$",
-            r"^n/?a\b.*$",
+            r"^none\.?$",
+            r"^n/?a\.?$",
         ]
 
         if any(

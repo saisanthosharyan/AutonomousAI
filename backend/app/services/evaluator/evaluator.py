@@ -6,6 +6,7 @@ from app.services.evaluator.project_checker import ProjectChecker
 from app.services.evaluator.quality_checker import QualityChecker
 from app.services.evaluator.documentation_checker import DocumentationChecker
 from app.services.execution.execution_manager import ExecutionManager
+from app.models.task import Task
 
 
 class Evaluator:
@@ -42,6 +43,7 @@ class Evaluator:
         self,
         project_path: str,
         execution_result: dict | None = None,
+        task: Task | None = None,
     ) -> dict:
 
         logger.info("=" * 60)
@@ -65,10 +67,17 @@ class Evaluator:
         # Project Structure
         # --------------------------------------------------
 
-        structure = self.project_checker.check(
-            project_path,
-            project_type,
-        )
+        if task and task.requested_files:
+            structure = self.project_checker.check(
+                project_path,
+                project_type,
+                task.requested_files,
+            )
+        else:
+            structure = self.project_checker.check(
+                project_path,
+                project_type,
+            )
 
         # --------------------------------------------------
         # Execution
@@ -110,12 +119,20 @@ class Evaluator:
         # Documentation
         # --------------------------------------------------
 
-        documentation = (
-            self.documentation_checker.check(
-                project_path,
-                project_type,
+        if task and task.requested_files:
+            documentation = (
+                self.documentation_checker.check(
+                    project_path,
+                    project_type,
+                    task.requested_files,
+                )
             )
-        )
+        else:
+            documentation = (
+                self.documentation_checker.check(
+                    project_path,
+                )
+            )
 
         # --------------------------------------------------
         # Overall Score

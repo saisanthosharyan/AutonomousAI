@@ -7,20 +7,15 @@ class ProjectChecker:
     """
     Validates the generated project's structure.
 
-    Checks whether important files/folders exist
-    based on the detected project type.
-
-    Returns a structure report with:
-
-    - score
-    - passed checks
-    - missing items
+    When requested_files are provided, they are treated as the
+    authoritative structural requirements for the project.
     """
 
     def check(
         self,
         project_path: str,
         project_type: str,
+        requested_files: list[str] | None = None,
     ) -> dict:
 
         logger.info(
@@ -30,11 +25,6 @@ class ProjectChecker:
         project = Path(project_path).resolve()
 
         if not project.exists():
-
-            logger.error(
-                "Project directory does not exist."
-            )
-
             return {
                 "score": 0,
                 "passed": [],
@@ -44,11 +34,6 @@ class ProjectChecker:
             }
 
         if not project.is_dir():
-
-            logger.error(
-                "Project path is not a directory."
-            )
-
             return {
                 "score": 0,
                 "passed": [],
@@ -60,12 +45,13 @@ class ProjectChecker:
         passed = []
         missing = []
 
-        # -----------------------------------------
-        # Python Project
-        # -----------------------------------------
+        if requested_files:
+            return self._check_requested_files(
+                project,
+                requested_files,
+            )
 
         if project_type == "python":
-
             self._check_file(
                 project / "requirements.txt",
                 "requirements.txt",
@@ -92,12 +78,7 @@ class ProjectChecker:
                 passed,
             )
 
-        # -----------------------------------------
-        # Node Project
-        # -----------------------------------------
-
         elif project_type == "node":
-
             self._check_file(
                 project / "package.json",
                 "package.json",
@@ -118,11 +99,7 @@ class ProjectChecker:
                 passed,
             )
 
-        # -----------------------------------------
-        # Static Web Project
-        # -----------------------------------------
         elif project_type == "static_web":
-
             logger.info(
                 "Checking static web project structure..."
             )
@@ -142,72 +119,33 @@ class ProjectChecker:
             ]
 
             for display_name, file_path in optional_files:
-
                 if file_path.is_file():
-
-                    passed.append(
-                        display_name
-                    )
-        # -----------------------------------------
-        # Java
-        # -----------------------------------------
+                    passed.append(display_name)
 
         elif project_type == "java":
-
-            java_files = list(
-                project.rglob("*.java")
-            )
+            java_files = list(project.rglob("*.java"))
 
             if java_files:
-
                 passed.append(".java files")
-
             else:
-
                 missing.append(".java files")
 
-            if (
-                project / "pom.xml"
-            ).exists():
-
+            if (project / "pom.xml").exists():
                 passed.append("pom.xml")
-
-            elif (
-                project / "build.gradle"
-            ).exists():
-
+            elif (project / "build.gradle").exists():
                 passed.append("build.gradle")
-
             else:
-
-                missing.append(
-                    "pom.xml/build.gradle"
-                )
-
-        # -----------------------------------------
-        # C++
-        # -----------------------------------------
+                missing.append("pom.xml/build.gradle")
 
         elif project_type == "cpp":
-
-            cpp_files = list(
-                project.rglob("*.cpp")
-            )
+            cpp_files = list(project.rglob("*.cpp"))
 
             if cpp_files:
-
                 passed.append(".cpp files")
-
             else:
-
                 missing.append(".cpp files")
 
-        # -----------------------------------------
-        # Docker
-        # -----------------------------------------
-
         elif project_type == "docker":
-
             self._check_file(
                 project / "Dockerfile",
                 "Dockerfile",
@@ -215,39 +153,65 @@ class ProjectChecker:
                 missing,
             )
 
-        # -----------------------------------------
-        # Unknown
-        # -----------------------------------------
-
         else:
-
-            logger.warning(
-                f"Unknown project type: {project_type}"
-            )
-
             missing.append(
                 f"Unknown project type: {project_type}"
             )
 
-        # -----------------------------------------
-        # Calculate Score
-        # -----------------------------------------
+        return self._build_result(
+            passed,
+            missing,
+        )
 
+    def _check_requested_files(
+        self,
+        project: Path,
+        requested_files: list[str],
+    ) -> dict:
+        """
+        Validate files explicitly requested by the user/planner.
+        """
+
+        passed = []
+        missing = []
+
+        for requested_file in requested_files:
+            relative_path = Path(requested_file)
+
+            if relative_path.is_absolute():
+                relative_path = Path(
+                    relative_path.name
+                )
+
+            file_path = project / relative_path
+
+            if file_path.is_file():
+                passed.append(
+                    requested_file
+                )
+            else:
+                missing.append(
+                    requested_file
+                )
+
+        return self._build_result(
+            passed,
+            missing,
+        )
+
+    @staticmethod
+    def _build_result(
+        passed: list[str],
+        missing: list[str],
+    ) -> dict:
         total = len(passed) + len(missing)
 
         if total == 0:
-
             score = 0
-
         else:
-
             score = round(
                 (len(passed) / total) * 100
             )
-
-        logger.info(
-            f"Project structure score: {score}%"
-        )
 
         return {
             "score": score,
@@ -255,78 +219,67 @@ class ProjectChecker:
             "missing": missing,
         }
 
-    # -------------------------------------------------
-
+    @staticmethod
     def _check_file(
-        self,
         file_path: Path,
         display_name: str,
-        passed: list,
-        missing: list,
-    ):
-
+        passed: list[str],
+        missing: list[str],
+    ) -> None:
         if file_path.is_file():
-
             passed.append(display_name)
-
         else:
-
             missing.append(display_name)
 
-    # -------------------------------------------------
-
+    @staticmethod
     def _check_optional_dir(
-        self,
         directory: Path,
         display_name: str,
-        passed: list,
-    ):
-
+        passed: list[str],
+    ) -> None:
         if directory.is_dir():
-
             passed.append(display_name)
 
-    # -------------------------------------------------
-
+    @staticmethod
     def _check_python_entry(
-        self,
         project: Path,
-        passed: list,
-        missing: list,
-    ):
-
-        priority = [
-
-            project / "main.py",
-            project / "app.py",
-            project / "run.py",
-
-            project / "src" / "main.py",
-            project / "src" / "app.py",
-            project / "src" / "run.py",
-
+        passed: list[str],
+        missing: list[str],
+    ) -> None:
+        entry_candidates = [
+            "main.py",
+            "app.py",
+            "run.py",
+            "src/main.py",
+            "src/app.py",
+            "src/run.py",
         ]
 
-        for file in priority:
-
-            if file.is_file():
-
-                passed.append(file.name)
-
+        for candidate in entry_candidates:
+            if (project / candidate).is_file():
+                passed.append(candidate)
                 return
 
-        py_files = list(
-            project.rglob("*.py")
-        )
+        python_files = list(project.rglob("*.py"))
 
-        if py_files:
+        ignored_dirs = {
+            ".git",
+            ".venv",
+            "venv",
+            "__pycache__",
+            ".pytest_cache",
+        }
 
-            passed.append(
-                "Python source files"
+        python_files = [
+            file
+            for file in python_files
+            if not any(
+                part in ignored_dirs
+                for part in file.parts
             )
+        ]
 
+        if python_files:
+            passed.append(".py entry file")
         else:
-
-            missing.append(
-                "No Python entry file"
-            )
+            missing.append(".py entry file")

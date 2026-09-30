@@ -107,7 +107,7 @@ elif operation == "divide":
     assert result["return_code"] == 0
 
 
-def test_interactive_project_is_skipped(tmp_path):
+def test_interactive_project_runs_controlled_smoke_test(tmp_path):
     project = create_project(
         tmp_path,
         {
@@ -122,7 +122,7 @@ print(name)
 
     assert result["success"] is True
     assert result["return_code"] == 0
-    assert "Interactive application detected" in result["stderr"]
+    assert "test" in result["stdout"]
 
 
 def test_web_project_is_skipped(tmp_path):

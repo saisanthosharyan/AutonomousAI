@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import time
@@ -1355,6 +1355,8 @@ class AgentOrchestrator:
             evaluation = await asyncio.to_thread(
                 self.evaluator.evaluate,
                 project["project_path"],
+                execution_result,
+                plan,
             )
 
         except Exception as exc:
