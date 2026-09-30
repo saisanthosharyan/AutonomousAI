@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 import json
+from pathlib import Path
 
 from sqlalchemy.orm import Session
 
@@ -61,6 +62,41 @@ def get_project(
         )
         .first()
     )
+
+
+def get_project_by_name(
+    db: Session,
+    project_name: str,
+    user_id: int,
+):
+    """
+    Return a project only when the generated project folder
+    belongs to the requested user.
+
+    project_path is stored as a filesystem path, while the
+    project-files API receives only the generated folder name.
+    """
+
+    projects = (
+        db.query(Project)
+        .filter(
+            Project.user_id == user_id,
+        )
+        .all()
+    )
+
+    for project in projects:
+        if not project.project_path:
+            continue
+
+        stored_project_name = Path(
+            project.project_path
+        ).name
+
+        if stored_project_name == project_name:
+            return project
+
+    return None
 
 
 def get_projects_by_session(

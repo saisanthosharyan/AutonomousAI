@@ -3,10 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
 from app.core.config import settings
 from app.core.logger import logger
-from app.services.auth.dependencies import get_current_user
+from app.database.crud import get_project_by_name
+from app.database.database import get_db
 from app.database.models import User
+from app.services.auth.dependencies import get_current_user
 
 
 router = APIRouter(
@@ -241,14 +245,46 @@ def _collect_files(
 @router.get("/{project_name}")
 def get_project_files(
     project_name: str,
+    db: Session = Depends(get_db),
     current_user: User = Depends(
         get_current_user
     ),
 ):
     try:
+        owned_project = get_project_by_name(
+            db,
+            project_name,
+            current_user.id,
+        )
+
+        if owned_project is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Project not found.",
+            )
+
         project_root = _resolve_project(
             project_name
         )
+
+        stored_project_path = Path(
+            owned_project.project_path
+        ).resolve()
+
+        if stored_project_path != project_root:
+            logger.warning(
+                (
+                    "Project path mismatch for project %s "
+                    "and user %s."
+                ),
+                project_name,
+                current_user.id,
+            )
+
+            raise HTTPException(
+                status_code=404,
+                detail="Project not found.",
+            )
 
         files = _collect_files(
             project_root
