@@ -2273,3 +2273,244 @@
     max-width: 260px;
   }
 }
+/* =========================================
+   SIDEBAR RECENT CHATS
+   ========================================= */
+
+.aio-sidebar-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 7px;
+}
+
+.aio-sidebar-history-item {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #7d8680;
+  font-family: inherit;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.aio-sidebar-history-item:hover {
+  background: #1a1e1b;
+  color: #d3d8d5;
+}
+
+.aio-sidebar-history-item svg {
+  flex-shrink: 0;
+}
+
+.aio-sidebar-history-item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aio-sidebar-history-empty {
+  padding: 8px 9px;
+  color: #555d58;
+  font-size: 11px;
+}
+/* =========================================
+   SETTINGS PAGE
+   ========================================= */
+
+.aio-settings-page {
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 36px;
+}
+
+.aio-settings-header {
+  margin-bottom: 28px;
+}
+
+.aio-settings-kicker {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 10px;
+  color: #7f8a83;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+.aio-settings-header h1 {
+  margin: 0;
+  color: #f0f3f1;
+  font-size: 28px;
+  font-weight: 600;
+}
+
+.aio-settings-header p {
+  max-width: 560px;
+  margin: 8px 0 0;
+  color: #7d8680;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.aio-settings-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.aio-settings-card {
+  padding: 22px;
+  border: 1px solid #252b27;
+  border-radius: 12px;
+  background: #111512;
+}
+
+.aio-settings-card-heading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #232824;
+}
+
+.aio-settings-avatar {
+  display: flex;
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #303831;
+  border-radius: 50%;
+  background: #1a201b;
+  color: #dce4df;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.aio-settings-card-heading h2,
+.aio-settings-section-title h2 {
+  margin: 0;
+  color: #e7ebe8;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.aio-settings-card-heading span,
+.aio-settings-section-title p {
+  display: block;
+  margin: 4px 0 0;
+  color: #707a73;
+  font-size: 12px;
+}
+
+.aio-settings-details {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.aio-settings-detail {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #232824;
+  border-radius: 9px;
+  background: #0d100e;
+  color: #7d8780;
+}
+
+.aio-settings-detail div {
+  min-width: 0;
+}
+
+.aio-settings-detail span,
+.aio-settings-app-info span {
+  display: block;
+  margin-bottom: 4px;
+  color: #626b65;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.aio-settings-detail strong,
+.aio-settings-app-info strong {
+  display: block;
+  overflow: hidden;
+  color: #cdd4cf;
+  font-size: 12px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aio-settings-section-title {
+  margin-bottom: 18px;
+}
+
+.aio-settings-app-info {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.aio-settings-app-info > div {
+  padding: 14px;
+  border: 1px solid #232824;
+  border-radius: 9px;
+  background: #0d100e;
+}
+
+.aio-settings-danger {
+  border-color: #332525;
+}
+
+.aio-settings-logout {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border: 1px solid #4a2c2c;
+  border-radius: 8px;
+  background: #1b1111;
+  color: #d99a9a;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.aio-settings-logout:hover {
+  border-color: #694040;
+  background: #251515;
+}
+
+@media (max-width: 800px) {
+  .aio-settings-page {
+    padding: 24px 18px;
+  }
+
+  .aio-settings-details,
+  .aio-settings-app-info {
+    grid-template-columns: 1fr;
+  }
+}

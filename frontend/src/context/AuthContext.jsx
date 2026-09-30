@@ -19,7 +19,7 @@ export function AuthProvider({ children }) {
 
       try {
         const response = await api.get("/auth/me");
-        setUser(response.data);
+        setUser(response.data.user);
       } catch (error) {
         console.error(
           "Failed to restore authentication:",
@@ -51,9 +51,9 @@ export function AuthProvider({ children }) {
 
     const meResponse = await api.get("/auth/me");
 
-    setUser(meResponse.data);
+    setUser(meResponse.data.user);
 
-    return meResponse.data;
+    return meResponse.data.user;
   };
 
   const register = async (

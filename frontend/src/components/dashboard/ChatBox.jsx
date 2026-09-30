@@ -209,10 +209,15 @@ export default function ChatBox() {
   const [runId, setRunId] = useState(null);
   const [result, setResult] = useState(null);
   const [syncedRunState, setSyncedRunState] = useState(null);
+  const [isHistoricalRun, setIsHistoricalRun] = useState(false);
 
   const sessionId = useMemo(() => getSessionId(), []);
 
-  const { runState } = useWebSocket(sessionId, runId);
+  const { runState } = useWebSocket(
+    sessionId,
+    runId,
+    !isHistoricalRun,
+  );
 
   useEffect(() => {
     window.dispatchEvent(
@@ -230,6 +235,7 @@ export default function ChatBox() {
       setRunId(null);
       setResult(null);
       setSyncedRunState(null);
+      setIsHistoricalRun(false);
     };
 
     window.addEventListener(
@@ -245,34 +251,42 @@ export default function ChatBox() {
     };
   }, []);
 
-  useEffect(() => {
-    const handleOpenChat = (event) => {
-      const chat = event.detail;
+useEffect(() => {
+  const handleOpenChat = (event) => {
+    const chat = event.detail;
 
-      if (!chat?.title) {
-        return;
-      }
+    if (!chat?.title) {
+      return;
+    }
 
-      setSubmittedPrompt(chat.title);
-      setPrompt("");
-      setLoading(false);
-      setRunId(null);
-      setResult(null);
-      setSyncedRunState(null);
-    };
+    setSubmittedPrompt(chat.title);
+    setPrompt("");
+    setResult(null);
+    setSyncedRunState(null);
 
-    window.addEventListener(
+    if (chat.runId) {
+    setIsHistoricalRun(true);
+    setRunId(chat.runId);
+    setLoading(true);
+  } else {
+    setIsHistoricalRun(false);
+    setRunId(null);
+    setLoading(false);
+  }
+  };
+
+  window.addEventListener(
+    "autodev:open-chat",
+    handleOpenChat,
+  );
+
+  return () => {
+    window.removeEventListener(
       "autodev:open-chat",
       handleOpenChat,
     );
-
-    return () => {
-      window.removeEventListener(
-        "autodev:open-chat",
-        handleOpenChat,
-      );
-    };
-  }, []);
+  };
+}, []);
 
   useEffect(() => {
     if (!runId) {
@@ -404,6 +418,7 @@ export default function ChatBox() {
     setLoading(true);
     setResult(null);
     setSyncedRunState(null);
+    setIsHistoricalRun(false);
 
     try {
       const data = await createRun(sessionId, message);

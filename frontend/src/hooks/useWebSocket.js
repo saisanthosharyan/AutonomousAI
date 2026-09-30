@@ -4,8 +4,11 @@ const AUTH_TOKEN_KEY = "autodev_access_token";
 const MAX_RECONNECT_ATTEMPTS = 10;
 const RECONNECT_DELAY = 1500;
 
-export default function useWebSocket(sessionId, runId) {
-  const [runState, setRunState] = useState(null);
+export default function useWebSocket(
+  sessionId,
+  runId,
+  enabled = true,
+) {  const [runState, setRunState] = useState(null);
   const [events, setEvents] = useState([]);
   const [connected, setConnected] = useState(false);
 
@@ -15,7 +18,7 @@ export default function useWebSocket(sessionId, runId) {
   const stopped = useRef(false);
 
   useEffect(() => {
-    if (!sessionId || !runId) {
+    if (!enabled || !sessionId || !runId) {
       return undefined;
     }
 
@@ -282,7 +285,7 @@ export default function useWebSocket(sessionId, runId) {
 
       setConnected(false);
     };
-  }, [sessionId, runId]);
+  }, [sessionId, runId, enabled]);
 
   return {
     runState,

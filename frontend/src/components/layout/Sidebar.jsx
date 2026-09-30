@@ -1,15 +1,62 @@
-import { NavLink, useNavigate } from "react-router-dom";
 import {
-  Home,
+  useEffect,
+  useState,
+} from "react";
+
+import {
+  NavLink,
+  useNavigate,
+} from "react-router-dom";
+import { useAuth } from "../../context/useAuth";
+
+import {
   FolderGit2,
-  Settings,
-  Plus,
-  Sparkles,
+  Home,
   MessageSquare,
+  Plus,
+  Settings,
+  Sparkles,
 } from "lucide-react";
+
+const CHAT_HISTORY_KEY = "autodev_chat_history";
+
+function loadChatHistory() {
+  try {
+    const saved = localStorage.getItem(
+      CHAT_HISTORY_KEY,
+    );
+
+    if (!saved) {
+      return [];
+    }
+
+    const parsed = JSON.parse(saved);
+
+    return Array.isArray(parsed)
+      ? parsed
+      : [];
+  } catch (error) {
+    console.error(
+      "Failed to load sidebar chat history:",
+      error,
+    );
+
+    return [];
+  }
+}
 
 export default function Sidebar() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+
+  const username = user?.username || "User";
+  const email = user?.email || "Signed in";
+
+  const userInitial =
+    username.charAt(0).toUpperCase() || "U";
+
+  const [chatHistory, setChatHistory] =
+    useState(loadChatHistory);
 
   const menu = [
     {
@@ -28,22 +75,82 @@ export default function Sidebar() {
     {
       name: "Settings",
       icon: Settings,
-      path: "#",
+      path: "/settings",
     },
   ];
 
+  useEffect(() => {
+    const handleHistoryUpdated = (event) => {
+      if (Array.isArray(event.detail)) {
+        setChatHistory(event.detail);
+        return;
+      }
+
+      setChatHistory(loadChatHistory());
+    };
+
+    const handleStorage = (event) => {
+      if (
+        event.key === CHAT_HISTORY_KEY
+      ) {
+        setChatHistory(loadChatHistory());
+      }
+    };
+
+    window.addEventListener(
+      "autodev-history-updated",
+      handleHistoryUpdated,
+    );
+
+    window.addEventListener(
+      "storage",
+      handleStorage,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "autodev-history-updated",
+        handleHistoryUpdated,
+      );
+
+      window.removeEventListener(
+        "storage",
+        handleStorage,
+      );
+    };
+  }, []);
+
   const handleNewChat = () => {
     navigate("/");
+
     window.dispatchEvent(
       new CustomEvent("autodev:new-chat"),
     );
+  };
+
+  const handleOpenChat = (chat) => {
+    navigate("/");
+
+    window.setTimeout(() => {
+      window.dispatchEvent(
+        new CustomEvent(
+          "autodev:open-chat",
+          {
+            detail: chat,
+          },
+        ),
+      );
+    }, 0);
   };
 
   return (
     <aside className="aio-sidebar">
       <div className="aio-sidebar-brand">
         <div className="aio-brand-mark">
-          <Sparkles size={18} strokeWidth={2.2} />
+          <Sparkles
+            size={18}
+            strokeWidth={2.2}
+          />
         </div>
 
         <div className="aio-brand-text">
@@ -57,7 +164,11 @@ export default function Sidebar() {
         className="aio-new-build"
         onClick={handleNewChat}
       >
-        <Plus size={18} strokeWidth={2.4} />
+        <Plus
+          size={18}
+          strokeWidth={2.4}
+        />
+
         <span>New Chat</span>
       </button>
 
@@ -76,7 +187,9 @@ export default function Sidebar() {
                 to={item.path}
                 className={({ isActive }) =>
                   `aio-nav-item ${
-                    isActive ? "active" : ""
+                    isActive
+                      ? "active"
+                      : ""
                   }`
                 }
               >
@@ -104,9 +217,37 @@ export default function Sidebar() {
             id="autodev-chat-history"
             className="aio-sidebar-history-list"
           >
-            <div className="aio-sidebar-history-empty">
-              <span>No chats yet</span>
-            </div>
+            {chatHistory.length === 0 ? (
+              <div className="aio-sidebar-history-empty">
+                <span>No chats yet</span>
+              </div>
+            ) : (
+              chatHistory
+                .slice(0, 8)
+                .map((chat) => (
+                  <button
+                    key={
+                      chat.id ||
+                      chat.runId ||
+                      chat.title
+                    }
+                    type="button"
+                    className="aio-sidebar-history-item"
+                    title={chat.title}
+                    onClick={() =>
+                      handleOpenChat(chat)
+                    }
+                  >
+                    <MessageSquare
+                      size={13}
+                    />
+
+                    <span>
+                      {chat.title}
+                    </span>
+                  </button>
+                ))
+            )}
           </div>
         </div>
 
@@ -139,18 +280,24 @@ export default function Sidebar() {
       </nav>
 
       <div className="aio-sidebar-bottom">
-        <div className="aio-user-card">
+       <div className="aio-user-card">
           <div className="aio-user-avatar">
-            S
+            {userInitial}
           </div>
 
           <div className="aio-user-info">
-            <span className="aio-user-name">
-              Santhosh
+            <span
+              className="aio-user-name"
+              title={username}
+            >
+              {username}
             </span>
 
-            <span className="aio-user-plan">
-              Free Plan
+            <span
+              className="aio-user-plan"
+              title={email}
+            >
+              {email}
             </span>
           </div>
 

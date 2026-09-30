@@ -9,6 +9,7 @@ import ProjectDetails from "./pages/ProjectDetails";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import History from "./pages/History";
+import Settings from "./pages/Settings";
 
 function ProtectedLayout() {
   return (
@@ -33,6 +34,7 @@ function App() {
             element={<ProjectDetails />}
           />
           <Route path="/history" element={<History />} />
+          <Route path="/settings" element={<Settings />} />
         </Route>
       </Route>
     </Routes>
