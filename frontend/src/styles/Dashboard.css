@@ -1683,3 +1683,593 @@
     min-height: 360px;
   }
 }
+/* =========================================
+   PROJECTS PAGE
+   ========================================= */
+
+.aio-projects-page {
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 32px;
+}
+
+.aio-projects-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+
+.aio-projects-header h1 {
+  margin: 8px 0 8px;
+  color: #f1f3f2;
+  font-size: 30px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+}
+
+.aio-projects-header p {
+  margin: 0;
+  max-width: 620px;
+  color: #818984;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.aio-projects-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 13px;
+  border: 1px solid #303532;
+  border-radius: 8px;
+  background: #171a18;
+  color: #c8cdca;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.aio-projects-refresh:hover:not(:disabled) {
+  border-color: #414843;
+  background: #1d211e;
+}
+
+.aio-projects-refresh:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.aio-projects-error {
+  margin-bottom: 20px;
+  padding: 12px 14px;
+  border: 1px solid #5c2e2e;
+  border-radius: 8px;
+  background: #211515;
+  color: #e6a7a7;
+  font-size: 12px;
+}
+
+.aio-project-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(290px, 1fr)
+  );
+  gap: 16px;
+}
+
+.aio-project-card {
+  display: flex;
+  min-height: 220px;
+  flex-direction: column;
+  padding: 18px;
+  border: 1px solid #262b28;
+  border-radius: 12px;
+  background: #111412;
+  transition:
+    transform 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.aio-project-card:hover {
+  transform: translateY(-2px);
+  border-color: #373e39;
+  background: #141815;
+}
+
+.aio-project-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.aio-project-card-icon,
+.aio-projects-state-icon {
+  display: flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #303632;
+  border-radius: 9px;
+  background: #191d1a;
+  color: #aeb6b1;
+}
+
+.aio-project-delete {
+  display: flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #676f6a;
+  cursor: pointer;
+}
+
+.aio-project-delete:hover:not(:disabled) {
+  border-color: #593131;
+  background: #211616;
+  color: #d78686;
+}
+
+.aio-project-delete:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.aio-project-card-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.aio-project-card-content h2 {
+  margin: 0 0 9px;
+  overflow: hidden;
+  color: #e7eae8;
+  font-size: 15px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aio-project-card-prompt {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: #7e8781;
+  font-size: 12px;
+  line-height: 1.65;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.aio-project-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid #242825;
+}
+
+.aio-project-date {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: #626a65;
+  font-size: 10px;
+}
+
+.aio-project-date span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aio-project-open {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 5px;
+  color: #b9c0bc;
+  font-size: 11px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.aio-project-open:hover {
+  color: #ffffff;
+}
+
+.aio-projects-state {
+  display: flex;
+  min-height: 320px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 32px;
+  border: 1px dashed #2d332f;
+  border-radius: 12px;
+  background: #101311;
+  text-align: center;
+  color: #777f7a;
+}
+
+.aio-projects-state h2 {
+  margin: 5px 0 0;
+  color: #cbd0cd;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.aio-projects-state p {
+  margin: 0;
+  color: #6f7772;
+  font-size: 12px;
+}
+
+.aio-spin {
+  animation: aio-spin 0.8s linear infinite;
+}
+
+@keyframes aio-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 700px) {
+  .aio-projects-page {
+    padding: 22px 16px;
+  }
+
+  .aio-projects-header {
+    flex-direction: column;
+  }
+
+  .aio-projects-refresh {
+    width: 100%;
+  }
+
+  .aio-project-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .aio-project-card-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+/* =========================================
+   PROJECT DETAILS PAGE
+   ========================================= */
+
+.aio-project-details-page {
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 32px;
+}
+
+.aio-project-details-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 24px;
+  color: #8d9690;
+  font-size: 12px;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.aio-project-details-back:hover {
+  color: #ffffff;
+}
+
+.aio-project-details-header {
+  margin-bottom: 26px;
+}
+
+.aio-project-details-header h1 {
+  margin: 8px 0 10px;
+  color: #f1f3f2;
+  font-size: 30px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+}
+
+.aio-project-details-header > p {
+  max-width: 800px;
+  margin: 0;
+  color: #818984;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.aio-project-details-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.aio-project-details-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #68716b;
+  font-size: 11px;
+}
+
+.aio-project-details-state {
+  display: flex;
+  min-height: 420px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #818984;
+  font-size: 12px;
+}
+
+@media (max-width: 700px) {
+  .aio-project-details-page {
+    padding: 22px 16px;
+  }
+
+  .aio-project-details-header h1 {
+    font-size: 24px;
+  }
+}
+/* =========================================
+   HISTORY PAGE
+   ========================================= */
+
+.aio-history-page {
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 32px;
+}
+
+.aio-history-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+
+.aio-history-header h1 {
+  margin: 8px 0 8px;
+  color: #f1f3f2;
+  font-size: 30px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+}
+
+.aio-history-header p {
+  margin: 0;
+  max-width: 620px;
+  color: #818984;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.aio-history-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 13px;
+  border: 1px solid #303532;
+  border-radius: 8px;
+  background: #171a18;
+  color: #c8cdca;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.aio-history-refresh:hover:not(:disabled) {
+  border-color: #414843;
+  background: #1d211e;
+}
+
+.aio-history-refresh:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.aio-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.aio-history-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 18px;
+  border: 1px solid #262b28;
+  border-radius: 12px;
+  background: #111412;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.aio-history-card:hover {
+  border-color: #373e39;
+  background: #141815;
+}
+
+.aio-history-card-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.aio-history-card-main h2 {
+  margin: 11px 0 9px;
+  color: #e7eae8;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.aio-history-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.aio-history-status.is-completed {
+  color: #79c995;
+}
+
+.aio-history-status.is-failed {
+  color: #df8b8b;
+}
+
+.aio-history-status.is-cancelled {
+  color: #b98b8b;
+}
+
+.aio-history-status.is-running,
+.aio-history-status.is-queued {
+  color: #d0b87c;
+}
+
+.aio-history-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: #737c76;
+  font-size: 11px;
+}
+
+.aio-history-details span + span::before {
+  margin-right: 12px;
+  color: #3f4642;
+  content: "•";
+}
+
+.aio-history-error {
+  margin-top: 12px;
+  padding: 9px 11px;
+  border: 1px solid #4c2929;
+  border-radius: 7px;
+  background: #1d1414;
+  color: #ce8585;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.aio-history-card-meta {
+  display: flex;
+  max-width: 220px;
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 7px;
+  color: #606863;
+  font-size: 10px;
+  text-align: right;
+}
+
+.aio-history-run-id {
+  display: block;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aio-history-empty {
+  display: flex;
+  min-height: 320px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 32px;
+  border: 1px dashed #2d332f;
+  border-radius: 12px;
+  background: #101311;
+  color: #777f7a;
+  text-align: center;
+}
+
+.aio-history-empty-icon {
+  display: flex;
+  width: 42px;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #303632;
+  border-radius: 10px;
+  background: #191d1a;
+  color: #aeb6b1;
+}
+
+.aio-history-empty h2 {
+  margin: 5px 0 0;
+  color: #cbd0cd;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.aio-history-empty p {
+  margin: 0;
+  color: #6f7772;
+  font-size: 12px;
+}
+
+@media (max-width: 700px) {
+  .aio-history-page {
+    padding: 22px 16px;
+  }
+
+  .aio-history-header {
+    flex-direction: column;
+  }
+
+  .aio-history-refresh {
+    width: 100%;
+  }
+
+  .aio-history-card {
+    flex-direction: column;
+  }
+
+  .aio-history-card-meta {
+    max-width: 100%;
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .aio-history-run-id {
+    max-width: 260px;
+  }
+}

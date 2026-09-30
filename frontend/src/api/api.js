@@ -86,8 +86,7 @@ export const getSessionRuns = async (
 };
 
 export const getRuns = async () => {
-  const response = await api.get("/runs");
-
+  const response = await api.get("/runs/");
   return response.data;
 };
 
