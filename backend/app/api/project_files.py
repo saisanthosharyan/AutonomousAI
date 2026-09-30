@@ -56,6 +56,7 @@ IGNORED_NAMES = {
     ".github",
     ".idea",
     ".vscode",
+    ".autodev_debug",
     "__pycache__",
     ".pytest_cache",
     ".mypy_cache",

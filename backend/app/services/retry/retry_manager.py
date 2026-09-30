@@ -1441,6 +1441,8 @@ class RetryManager:
             "no actual issues found",
             "no problems found",
             "no defects found",
+            "no defects or functional problems were identified",
+            "no defects or functional problems identified",
             "no actionable problems found",
             "no concrete issues identified",
             "no concrete defects identified",
