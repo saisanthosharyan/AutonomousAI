@@ -960,6 +960,17 @@ class PythonExecutor:
             and "argumentparser" in lowered
         ):
 
+            smoke_args = self._infer_argparse_arguments(
+                content
+            )
+
+            if smoke_args:
+                command.extend(
+                    smoke_args
+                )
+
+                return command
+
             command.append("--help")
 
             return command
@@ -1002,7 +1013,60 @@ class PythonExecutor:
             return command
 
         return command
+    # ==========================================================
+    # INFER ARGPARSE ARGUMENTS
+    # ==========================================================
 
+    def _infer_argparse_arguments(
+        self,
+        content: str,
+    ) -> list[str]:
+        """
+        Infer safe smoke-test arguments for common argparse
+        command-line applications.
+        """
+
+        lowered = content.lower()
+
+        # ------------------------------------------------------
+        # Common calculator pattern
+        # ------------------------------------------------------
+
+        if (
+            "choices" in lowered
+            and "'+'" in lowered
+            and "'-'" in lowered
+            and "'*'" in lowered
+            and "'/'" in lowered
+        ):
+            return [
+                "2",
+                "+",
+                "3",
+            ]
+
+        # ------------------------------------------------------
+        # Common calculator with double-quoted choices
+        # ------------------------------------------------------
+
+        if (
+            "choices" in lowered
+            and '"+"' in lowered
+            and '"-"' in lowered
+            and '"*"' in lowered
+            and '"/"' in lowered
+        ):
+            return [
+                "2",
+                "+",
+                "3",
+            ]
+
+        # ------------------------------------------------------
+        # Unknown argparse application
+        # ------------------------------------------------------
+
+        return []
     # ==========================================================
     # INFER SYS.ARGV ARGUMENTS
     # ==========================================================
