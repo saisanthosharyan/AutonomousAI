@@ -1456,8 +1456,7 @@ class RetryManager:
         ]
 
         if any(
-            normalized == phrase
-            or normalized == f"{phrase}."
+            phrase in normalized
             for phrase in clean_phrases
         ):
             return ""
