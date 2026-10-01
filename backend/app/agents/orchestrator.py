@@ -1264,6 +1264,64 @@ class AgentOrchestrator:
             user_id,
         )
 
+        if (
+            review_retry_stats.get("successful")
+            and review_retry_stats.get("repairs", 0) > 0
+        ):
+            logger.info(
+                "Review repairs changed the project. Re-running automated tests."
+            )
+
+            try:
+                (
+                    test_result,
+                    project,
+                    code,
+                    post_review_test_debug_report,
+                    post_review_test_retry_stats,
+                ) = await self.retry_manager.test_with_retry(
+                    project=project,
+                    code=code,
+                    original_request=task,
+                )
+
+                test_result = test_result or {}
+                post_review_test_debug_report = (
+                    post_review_test_debug_report or {}
+                )
+                post_review_test_retry_stats = (
+                    post_review_test_retry_stats or {}
+                )
+
+                debug_report["testing"] = (
+                    post_review_test_debug_report
+                )
+                test_retry_stats = (
+                    post_review_test_retry_stats
+                )
+
+            except Exception as exc:
+                logger.exception(
+                    "Post-review test verification failed."
+                )
+
+                test_result = self._failed_test_result(
+                    str(exc)
+                )
+
+                test_retry_stats = {
+                    "attempts": 0,
+                    "repairs": 0,
+                    "test_failures": 1,
+                    "repeated_errors_detected": 0,
+                    "successful": False,
+                }
+
+                debug_report["testing"] = {
+                    "error": str(exc),
+                    "post_review": True,
+                }
+
         logger.info(
             "Step 7/9 - Final project validation..."
         )

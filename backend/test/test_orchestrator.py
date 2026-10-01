@@ -671,3 +671,118 @@ def test_pipeline_metrics_are_recorded(
     assert "review" in metrics["stage_times"]
     assert "evaluation" in metrics["stage_times"]
     assert "save" in metrics["stage_times"]
+
+
+def test_review_repair_reruns_tests(tmp_path):
+    orchestrator = create_orchestrator()
+
+    configure_success(
+        orchestrator,
+        tmp_path,
+    )
+
+    project_path = str(tmp_path / "project")
+    zip_path = str(tmp_path / "project.zip")
+
+    orchestrator.retry_manager.test_with_retry = AsyncMock(
+        side_effect=[
+            (
+                {
+                    "success": True,
+                    "stdout": "Initial tests passed",
+                    "stderr": "",
+                    "return_code": 0,
+                },
+                {
+                    "project_path": project_path,
+                    "zip_path": zip_path,
+                },
+                "print('hello')",
+                {"success": True},
+                {
+                    "attempts": 1,
+                    "repairs": 0,
+                    "successful": True,
+                },
+            ),
+            (
+                {
+                    "success": True,
+                    "stdout": "Post-review tests passed",
+                    "stderr": "",
+                    "return_code": 0,
+                },
+                {
+                    "project_path": project_path,
+                    "zip_path": zip_path,
+                },
+                "print('repaired')",
+                {"success": True},
+                {
+                    "attempts": 1,
+                    "repairs": 0,
+                    "successful": True,
+                },
+            ),
+        ]
+    )
+
+    orchestrator.retry_manager.review_with_retry = AsyncMock(
+        return_value={
+            "project": {
+                "project_path": project_path,
+                "zip_path": zip_path,
+            },
+            "code": "print('repaired')",
+            "review": """
+## Overall Summary
+
+The repaired project is functional.
+
+## Strengths
+
+- Review repair completed successfully.
+
+## Problems Found
+
+No significant problems were found.
+
+## Final Score
+
+10/10
+""",
+            "repair_history": [
+                {
+                    "attempt": 1,
+                    "repair_type": "review",
+                }
+            ],
+            "review_stats": {
+                "attempts": 1,
+                "repairs": 1,
+                "successful": True,
+            },
+        }
+    )
+
+    with patch(
+        "app.agents.orchestrator.SessionLocal"
+    ) as session_local, patch(
+        "app.agents.orchestrator.create_project"
+    ):
+        session_local.return_value = MagicMock()
+
+        result = asyncio.run(
+            orchestrator.execute(
+                "Create a test project"
+            )
+        )
+
+    assert result["improved_code"] == "print('repaired')"
+
+    # Any review repair changes the final project state.
+    # Tests must therefore run again against that repaired state.
+    assert (
+        orchestrator.retry_manager.test_with_retry.await_count
+        == 2
+    )

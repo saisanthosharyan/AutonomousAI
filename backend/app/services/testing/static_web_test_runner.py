@@ -633,13 +633,14 @@ try:
                         or "text"
                     )
 
-                    if input_type in {
+                    if input_type == "number":
+                        field.fill("10")
+                    elif input_type in {
                         "text",
                         "email",
                         "search",
                         "tel",
                         "url",
-                        "number",
                     }:
                         field.fill("AutoDev Test")
 
@@ -868,13 +869,14 @@ except Exception as exc:
                         or "text"
                     )
 
-                    if input_type in {
+                    if input_type == "number":
+                        field.fill("10")
+                    elif input_type in {
                         "text",
                         "email",
                         "search",
                         "tel",
                         "url",
-                        "number",
                     }:
                         field.fill("AutoDev Test")
 

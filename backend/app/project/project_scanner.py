@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 from dataclasses import dataclass
@@ -66,6 +66,7 @@ class ProjectScanner:
         # AutoDev generated data
         ".autodev",
         ".autodev_debug",
+        "repair",
 
         # Execution / temporary data
         "execution",

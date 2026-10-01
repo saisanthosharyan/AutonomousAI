@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pathlib import Path
 
@@ -57,6 +57,7 @@ IGNORED_NAMES = {
     ".idea",
     ".vscode",
     ".autodev_debug",
+    "repair",
     "__pycache__",
     ".pytest_cache",
     ".mypy_cache",
