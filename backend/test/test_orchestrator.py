@@ -247,6 +247,10 @@ def test_orchestrator_success(
     assert "Final Score" in result["review"]
     assert "9/10" in result["review"]
 
+    # The reviewer must receive the exact original user request.
+    reviewer_call = orchestrator.reviewer.run.await_args
+    assert reviewer_call.kwargs["original_request"] == "Create a test project"
+
     assert result["evaluation"]["overall_score"] == 95
     assert result["improved_code"] == "print('hello')"
 

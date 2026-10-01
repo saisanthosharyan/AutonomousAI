@@ -38,6 +38,31 @@ def test_categorize_error():
     assert categorize_error("something unexpected") == "RuntimeError"
     assert categorize_error("") == "Unknown"
 
+def test_extract_review_problems_accepts_clean_review_wording():
+    review = """
+## Overall Summary
+
+The generated project is clean and fully functional.
+
+## Strengths
+
+- Complete CRUD implementation.
+- Input validation is present.
+
+## Problems Found
+
+There are no significant defects or missing requirements identified in the project files.
+
+## Final Score
+
+10.0 / 10
+"""
+
+    problems = RetryManager._extract_review_problems(
+        review
+    )
+
+    assert problems == ""
 
 def test_retry_manager_success_without_repair(tmp_path):
     project = create_project(tmp_path)

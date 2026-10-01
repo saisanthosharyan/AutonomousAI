@@ -1455,6 +1455,7 @@ class RetryManager:
             "no actionable problems were identified",
             "no concrete issues were identified",
             "all requirements are satisfied",
+            "no significant defects or missing requirements identified",
         ]
 
         if any(

@@ -1114,7 +1114,7 @@ class AgentOrchestrator:
             initial_review = await self._run_review(
                 code,
                 project["project_path"],
-                plan,
+                task,
             )
 
             if not self._review_succeeded(
