@@ -911,7 +911,7 @@ useEffect(() => {
                       </div>
 
                       <div>
-                        <span>AI Evaluation</span>
+                        <span>Project Quality</span>
 
                         <strong>
                           {evaluationScore ?? "—"}
