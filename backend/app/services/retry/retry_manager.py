@@ -1463,6 +1463,57 @@ class RetryManager:
             for phrase in clean_phrases
         ):
             return ""
+        table_lines = [
+            line.strip()
+            for line in problems.splitlines()
+            if line.strip().startswith("|")
+            and line.strip().endswith("|")
+        ]
+
+        if table_lines:
+            header_cells = [
+                cell.strip().lower()
+                for cell in table_lines[0].strip("|").split("|")
+            ]
+
+            if "severity" in header_cells:
+                severity_index = header_cells.index(
+                    "severity"
+                )
+
+                severities = []
+
+                for line in table_lines[1:]:
+                    cells = [
+                        cell.strip()
+                        for cell in line.strip("|").split("|")
+                    ]
+
+                    if all(
+                        re.fullmatch(r"-+", cell)
+                        for cell in cells
+                    ):
+                        continue
+
+                    if len(cells) > severity_index:
+                        severity = cells[
+                            severity_index
+                        ].strip().lower()
+
+                        if severity:
+                            severities.append(
+                                severity
+                            )
+
+                if (
+                    severities
+                    and all(
+                        severity == "low"
+                        for severity in severities
+                    )
+                ):
+                    return ""
+
         clean_none_patterns = [
             r"^none\.?$",
             r"^n/?a\.?$",
@@ -1802,3 +1853,4 @@ class RetryManager:
             "code": fixed_code,
             "history": history_entry,
         }
+

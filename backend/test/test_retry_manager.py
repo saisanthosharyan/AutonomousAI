@@ -499,3 +499,51 @@ None.
             RetryManager._extract_review_problems(review)
             == problem
         )
+
+def test_extract_review_problems_ignores_low_severity_optional_findings():
+    review = """
+## Problems Found
+
+| File | Problem | Reason | Severity |
+|------|---------|--------|----------|
+| index.html | Textarea missing `required` attribute | JavaScript validation already prevents empty content. | Low |
+| script.js | No delete confirmation | Confirmation would reduce accidental deletion. | Low |
+| script.js | Theoretical ID collision | `Date.now()` could theoretically collide. | Low |
+
+## Possible Runtime Errors
+
+No concrete runtime errors identified.
+
+## Final Suggestions
+
+Optional improvements (not defects):
+- Add a confirmation dialog before deletion.
+- Add `required` to the textarea.
+
+## Final Score
+
+9.5 / 10
+
+The project fully satisfies all stated requirements.
+"""
+
+    assert RetryManager._extract_review_problems(review) == ""
+
+def test_extract_review_problems_keeps_medium_severity_table_findings():
+    review = """
+## Problems Found
+
+| File | Problem | Reason | Severity |
+|------|---------|--------|----------|
+| script.js | Empty content can be saved | Required validation is missing. | Medium |
+| index.html | Minor styling issue | Cosmetic improvement only. | Low |
+
+## Possible Runtime Errors
+
+None.
+"""
+
+    problems = RetryManager._extract_review_problems(review)
+
+    assert "Empty content can be saved" in problems
+    assert "Medium" in problems
