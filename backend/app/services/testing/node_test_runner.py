@@ -158,8 +158,26 @@ class NodeTestRunner:
 
         try:
 
+            test_command = [
+                npm_path,
+                "test",
+            ]
+
+            test_script = str(
+                scripts.get("test", "")
+            ).lower()
+
+            if "react-scripts test" in test_script:
+                test_command.extend(
+                    [
+                        "--",
+                        "--watchAll=false",
+                        "--passWithNoTests",
+                    ]
+                )
+
             process = subprocess.run(
-                [npm_path, "test"],
+                test_command,
                 cwd=project,
                 capture_output=True,
                 text=True,

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import ast
 import json
@@ -1680,7 +1680,116 @@ class FixerAgent(BaseAgent):
         return result
 
     # ==========================================================
+    # JAVASCRIPT CONFIGURATION RESOLUTION
+    # ==========================================================
+
+    def _resolve_javascript_config_conflicts(
+        self,
+        file_blocks: List[Tuple[str, str]],
+        original_files: Dict[str, str],
+    ) -> List[Tuple[str, str]]:
+        """
+        Resolve conflicting JavaScript configuration sources.
+
+        Browserslist must not be configured both in package.json
+        and in a standalone .browserslistrc file.
+
+        When the original project already used package.json for
+        Browserslist configuration, remove a .browserslistrc file
+        introduced by the repair agent.
+        """
+
+        files = {
+            self._normalize_path_key(path): content
+            for path, content in file_blocks
+        }
+
+        package_content = files.get(
+            "package.json"
+        )
+
+        if package_content is None:
+            return file_blocks
+
+        try:
+            package_data = json.loads(
+                package_content
+            )
+        except (json.JSONDecodeError, TypeError):
+            return file_blocks
+
+        has_package_browserslist = (
+            isinstance(package_data, dict)
+            and "browserslist" in package_data
+        )
+
+        has_browserslistrc = (
+            ".browserslistrc" in files
+        )
+
+        if not (
+            has_package_browserslist
+            and has_browserslistrc
+        ):
+            return file_blocks
+
+        original_package = original_files.get(
+            "package.json"
+        )
+
+        original_has_package_browserslist = False
+
+        if original_package is not None:
+            try:
+                original_package_data = json.loads(
+                    original_package
+                )
+
+                original_has_package_browserslist = (
+                    isinstance(
+                        original_package_data,
+                        dict,
+                    )
+                    and "browserslist"
+                    in original_package_data
+                )
+            except (
+                json.JSONDecodeError,
+                TypeError,
+            ):
+                pass
+
+        original_has_browserslistrc = (
+            ".browserslistrc" in original_files
+        )
+
+        if (
+            original_has_package_browserslist
+            and not original_has_browserslistrc
+        ):
+            logger.warning(
+                "Removed repair-generated .browserslistrc "
+                "because the original package.json already "
+                "contains Browserslist configuration."
+            )
+
+            return [
+                (path, content)
+                for path, content in file_blocks
+                if self._normalize_path_key(path)
+                != ".browserslistrc"
+            ]
+
+        raise RuntimeError(
+            "Browserslist configuration conflict: "
+            "package.json contains a browserslist field "
+            "while .browserslistrc also exists. "
+            "Keep exactly one Browserslist configuration."
+        )
+
+    # ==========================================================
     # PROMPT
+    # ==========================================================
     # ==========================================================
 
     def _build_prompt(
@@ -1719,7 +1828,7 @@ You are AutoDev AI's autonomous software repair engineer.
 Your job is to repair the USER'S SOURCE PROJECT.
 
 ==========================================================
-CRITICAL RULE â€” PRESERVE THE PROJECT STRUCTURE
+CRITICAL RULE — PRESERVE THE PROJECT STRUCTURE
 ==========================================================
 
 The project below is the source of truth.
@@ -1763,7 +1872,7 @@ necessary and clearly required by the error.
 The original file path is authoritative.
 
 ==========================================================
-CRITICAL RULE â€” TEST FILES ARE NOT APPLICATION FILES
+CRITICAL RULE — TEST FILES ARE NOT APPLICATION FILES
 ==========================================================
 
 Tests and application source code have different responsibilities.
@@ -1862,7 +1971,7 @@ FILE: app.py
 [test code]
 
 ==========================================================
-CRITICAL RULE â€” PRESERVE SOURCE CODE
+CRITICAL RULE — PRESERVE SOURCE CODE
 ==========================================================
 
 The project below is the source of truth.
@@ -1987,7 +2096,7 @@ They are NOT source files.
 NEVER return runtime/debug artifacts.
 
 ==========================================================
-CRITICAL RULE â€” EACH FILE EXACTLY ONCE
+CRITICAL RULE — EACH FILE EXACTLY ONCE
 ==========================================================
 
 Every original source file must appear EXACTLY ONE TIME
@@ -2784,6 +2893,17 @@ Return ONLY FILE blocks.
         )
 
         # ------------------------------------------------------
+        # Resolve conflicting JavaScript configuration sources.
+        # ------------------------------------------------------
+
+        file_blocks = (
+            self._resolve_javascript_config_conflicts(
+                file_blocks,
+                original_files,
+            )
+        )
+
+        # ------------------------------------------------------
         # FINAL TEST IMMUTABILITY CHECK
         # ------------------------------------------------------
 
@@ -2931,6 +3051,11 @@ Generate the corrected project now.
             )
 
             retry_blocks = self._restore_missing_original_files(
+                retry_blocks,
+                original_files,
+            )
+
+            retry_blocks = self._resolve_javascript_config_conflicts(
                 retry_blocks,
                 original_files,
             )
